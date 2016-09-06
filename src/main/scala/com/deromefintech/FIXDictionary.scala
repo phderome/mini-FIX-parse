@@ -26,14 +26,16 @@ object FIXDictionary {
   trait FIXTypes {
     val ttype: String
   }
+  type PTypedFixTag = Parser[TypedFIXTag]
+  type PMapTypedFixTag = Parser[Map[Int, TypedFIXTag]]
 
-  case class StringFIXTag(id: Int, name: String, val value: String) extends TypedFIXTag
+  case class StringFIXTag(id: Int, name: String, value: String) extends TypedFIXTag
 
   object StringFIXTag extends FIXTypes {
     override val ttype = "String"
 
     def parseBuilder(id: Int, name: String) =
-      P(s"${id}=" ~ tagStringValue).map(StringFIXTag(id, name, _))
+      P(s"$id=" ~ tagStringValue).map(StringFIXTag(id, name, _))
   }
 
   case class CharFIXTag(id: Int, name: String, value: Char) extends TypedFIXTag
@@ -42,7 +44,7 @@ object FIXDictionary {
     override val ttype = "Char"
 
     def parseBuilder(id: Int, name: String) = {
-      val x = P(s"${id}=" ~ tagCharValue)
+      val x = P(s"$id=" ~ tagCharValue)
       x.map(s => CharFIXTag(id, name, s))
     }
   }
@@ -53,7 +55,7 @@ object FIXDictionary {
     override val ttype = "Int"
 
     def parseBuilder(id: Int, name: String) =
-      P(s"${id}=" ~ tagIntValue).map(IntFIXTag(id, name, _))
+      P(s"$id=" ~ tagIntValue).map(IntFIXTag(id, name, _))
   }
 
   case class BooleanFIXTag(id: Int, name: String, value: Boolean) extends TypedFIXTag
@@ -62,10 +64,10 @@ object FIXDictionary {
     override val ttype = "Boolean"
 
     def parseBuilder(id: Int, name: String) =
-      P(s"${id}=" ~ tagBooleanValue).map(BooleanFIXTag(id, name, _))
+      P(s"$id=" ~ tagBooleanValue).map(BooleanFIXTag(id, name, _))
   }
 
-  def buildBlock(tag: Parser[TypedFIXTag], atEnd: Boolean = false) = {
+  def buildHeaderBlock(tag: PTypedFixTag, atEnd: Boolean = false) = {
     val tagTail = P(tagSep ~ tag).rep
     val rawBlock = if (atEnd) P(tag ~ tagTail ~ End)
       else P(tag ~ tagTail)
@@ -76,17 +78,33 @@ object FIXDictionary {
       x => x.map{y: TypedFIXTag => (y.id, y) }.toMap)
   }
 
-  def buildFullMsgP(headerMap: Parser[Map[Int, TypedFIXTag]],
-                    trailerMap: Parser[Map[Int, TypedFIXTag]],
-                    tag: Parser[TypedFIXTag]) = {
-    val msgBodyAsMap = buildBlock(tag)
-    P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ trailerMap)
+  def buildBlock(tag: PTypedFixTag, atEnd: Boolean = false) = {
+    val tagTail = P(tagSep ~ tag).rep
+    val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
+    val block = rawBlock.map {
+      case (x: TypedFIXTag, y: Seq[TypedFIXTag]) => y :+ x
+    }
+    block.map(_.map { y: TypedFIXTag => (y.id, y) }.toMap)
   }
 
+  // headerTag, trailerMap
+  def buildFullMsgP(controlPair: ControlTagsParserPair,
+                    msgTypeIDTagName: String,
+                    tags: PTypedFixTag) = {
+    val msgTypeIDTag = buildMsgTypeIDTag(msgTypeIDTagName)
+    val headerMap = buildHeaderBlock(P(controlPair.headerTags | msgTypeIDTag))
+    // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
+    // when building the map of tags.
+    val msgBodyAsMap = buildBlock(tags)
+    P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
+  }
+
+  def buildMsgTypeIDTag(value: String, tagName: String = "MsgType", code: Int = 35) =
+    P(s"$code=" ~ value ).!.map(x => StringFIXTag(code, tagName, value))
+
   // Header tags
-  val msgTypeTag = StringFIXTag.parseBuilder(35, "MsgType")
   val possDupeTag = BooleanFIXTag.parseBuilder(43, "possDupe")
-  val headerTag = P(msgTypeTag | possDupeTag )
+  val headerTag: PTypedFixTag = P(possDupeTag)  // hack
 
   // Trailer tags
   val checkSumTag = StringFIXTag.parseBuilder(10, "CheckSum")
@@ -94,11 +112,8 @@ object FIXDictionary {
   val signatureTag = StringFIXTag.parseBuilder(89, "Signature")  // HACK: should be Data
   val trailerTag = P(checkSumTag | signatureLengthTag | signatureTag )
 
-  // Header
-  val headerMap = buildBlock(headerTag)
-
   // Trailer
-  val trailerMap = buildBlock(trailerTag, true)
+  val trailerMap = buildBlock(trailerTag, atEnd = true)
 
   // Body tags
   val clOrdIDTag = StringFIXTag.parseBuilder(11, "ClOrdID")
@@ -108,22 +123,30 @@ object FIXDictionary {
   val sideTag = CharFIXTag.parseBuilder(54, "Side")
   val symbolTag = StringFIXTag.parseBuilder(55, "Symbol")
 
+  // MsgID Info
+  val newOrderSingleMsgIdName = "D"
+  val cancelRequestMsgIdName = "F"
+  val cxlReplaceMsgIdName = "G"
+  val executionReportMsgIdName = "8"
+
+  case class ControlTagsParserPair(headerTags: PTypedFixTag , trailerMap: PMapTypedFixTag)
+  val controlTags = ControlTagsParserPair(headerTag, trailerMap)
   // New Order Single
-  val msgTypeDTag = P(clOrdIDTag | ordTypeTag | sideTag | symbolTag)
-  val fullMsgTypeDAsMap = buildFullMsgP(headerMap, trailerMap, msgTypeDTag)
+  val msgTypeDTags = P(clOrdIDTag | ordTypeTag | sideTag | symbolTag)
+  val fullMsgTypeDAsMap = buildFullMsgP(controlTags, newOrderSingleMsgIdName, msgTypeDTags)
 
   // Cancel Request
-  val msgTypeFTag = P(clOrdIDTag | orderIDTag | origClOrdIDTag | sideTag | symbolTag)
-  val fullMsgTypeFAsMap = buildFullMsgP(headerMap, trailerMap, msgTypeFTag)
+  val msgTypeFTags = P(clOrdIDTag | orderIDTag | origClOrdIDTag | sideTag | symbolTag)
+  val fullMsgTypeFAsMap = buildFullMsgP(controlTags, cancelRequestMsgIdName, msgTypeFTags)
 
   // Cancel Replace Request
-  val msgTypeGTag = P(clOrdIDTag | orderIDTag | ordTypeTag | origClOrdIDTag |
+  val msgTypeGTags = P(clOrdIDTag | orderIDTag | ordTypeTag | origClOrdIDTag |
     sideTag | symbolTag)
-  val fullMsgTypeGAsMap = buildFullMsgP(headerMap, trailerMap, msgTypeGTag)
+  val fullMsgTypeGAsMap = buildFullMsgP(controlTags, cxlReplaceMsgIdName, msgTypeGTags)
 
   // Execution Report
-  val msgType8Tag = P(clOrdIDTag | orderIDTag | ordTypeTag | origClOrdIDTag  |
+  val msgType8Tags = P(clOrdIDTag | orderIDTag | ordTypeTag | origClOrdIDTag |
     sideTag | symbolTag)
-  val fullMsgType8AsMap = buildFullMsgP(headerMap, trailerMap, msgType8Tag)
+  val fullMsgType8AsMap = buildFullMsgP(controlTags, executionReportMsgIdName, msgType8Tags)
 
 }

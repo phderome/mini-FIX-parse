@@ -32,11 +32,11 @@ import com.deromefintech.FIXDictionary._
   def main(args: Array[String]): Unit = {
 
    // val Parsed.Success(value, successIndex)  = tag.parse("55")
-    val test1 = msgTypeDTag.parse("54=2")
+    val test1 = msgTypeDTags.parse("54=2")
     println(test1)  // 1
     val Parsed.Success(value1, 4) = test1
 
-    val test2 = msgTypeDTag.parse("40=B")
+    val test2 = msgTypeDTags.parse("40=B")
     println(test2)
     val Parsed.Success(_, 4) = test2
 
@@ -48,13 +48,13 @@ import com.deromefintech.FIXDictionary._
     println(test4)
     val Parsed.Success(_, 1) = test4
 
-    val test5 = msgTypeDTag.parse("54=0")
+    val test5 = msgTypeDTags.parse("54=0")
     println(test5)  // 5
     val Parsed.Success(_, 4) = test5
 
-    val test6 = fullMsgTypeDAsMap.parse("35=D,54=1,10=100")
+    val test6 = fullMsgTypeDAsMap.parse("35=D,43=N,54=1,10=100")
     println(s"test6 $test6 ${test6.index}")
-    val Parsed.Success(_, 16) = test6
+    val Parsed.Success(_, 21) = test6
 
     val test7 = fullMsgTypeDAsMap.parse("35=D,43=Y1,10=100")
     println(s"test7 $test7 ${test7.index}")
@@ -64,13 +64,13 @@ import com.deromefintech.FIXDictionary._
     println(test8) // 8 assert fails as 43 is bad
     val Parsed.Failure(_, 5, _) = test8
 
-    val test9 = fullMsgTypeDAsMap.parse("35=D,40=11,10=100")
+    val test9 = fullMsgTypeDAsMap.parse("35=D,43=N,40=11,10=100")
     println(test9) // assert fails as 54 is too long
-    val Parsed.Failure(_, 5, _) = test9
+    val Parsed.Failure(_, 10, _) = test9
 
-    val test10 = fullMsgTypeDAsMap.parse("35=D,54=212,40=P,10=100")
+    val test10 = fullMsgTypeDAsMap.parse("35=D,43=N,54=212,40=P,10=100")
     println(test10)  // assert fails as 54 is too long
-    val Parsed.Failure(_, 5, _) = test10
+    val Parsed.Failure(_, 10, _) = test10
 
     val test11 = fullMsgTypeDAsMap.parse("35=D,43=Y,54=0,40=0,55=BMO,10=100")
     println(s"test 11 $test11")
@@ -80,14 +80,23 @@ import com.deromefintech.FIXDictionary._
     println(s"test 12 $test12 ${test12.index}")  // assert fails as 43 is too long
     val Parsed.Failure(_, 9, _) = test12
 
-    val test13 = fullMsgTypeDAsMap.parse("54=0,40=0,55=BMO,10=100")
+    val test13 = fullMsgTypeDAsMap.parse("54=0,43=N,40=0,55=BMO,10=100")
     println(s"test 13 $test13 ${test13.index}")  // assert fails as header is missing
     val Parsed.Failure(_, 0, _) = test13
 
-    val test14 = fullMsgTypeDAsMap.parse("35=D,54=0,40=0,10=100,55=BMO")
+    val test14 = fullMsgTypeDAsMap.parse("35=D,43=N,54=0,40=0,10=100,55=BMO")
     println(s"test 14 $test14 index:${test14.index}")  // assert fails as there is spurious body tag in trailer
-    val Parsed.Failure(_, 21, _) = test14
+    val Parsed.Failure(_, 26, _) = test14
+
+    val test15 = fullMsgTypeDAsMap.parse("35=D,43=Y,54=0,40=0,37=BAD,55=BMO,10=100")
+    println(s"test 15 $test15 ${test15.index}")
+    val Parsed.Failure(_, 20, _) = test15  // because of tag 37
+
+    val test16 = fullMsgTypeFAsMap.parse("35=F,43=Y,54=0,37=BAD,55=BMO,10=100")
+    println(s"test 16 $test16 ${test16.index}")
+    val Parsed.Success(_, 35) = test16  // accepts tag 37 because it's messge F
 
   }
+
 }
 
