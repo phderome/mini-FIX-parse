@@ -152,7 +152,11 @@ object FIXDictionary {
   val executionReportMsgIdName = "8"
   val orderCxlRejectMsgIdName = "9"
 
+  // TO DO, Work In Progress, read and parse the data here
   val conf = ConfigFactory.load() // to load tags dynamically from a resource file
+  val newOrderConfigTags = conf.getString("NewOrderTags")
+  println(s"tags are $newOrderConfigTags")
+  // Then code below can just use that and not specify individual tags.
   // New Order Single
   val newOrderTags = Seq(clOrdIDTag, ordTypeTag, sideTag, symbolTag)
   val fullMsgTypeDAsMap = buildFullMsgP(controlTags, newOrderSingleMsgIdName, newOrderTags)
