@@ -30,6 +30,7 @@ libraryDependencies ++= {
     "org.typelevel" %% "cats" % "0.6.1",
     "com.lihaoyi" %% "fastparse" % "0.3.7",
     "com.lihaoyi" %% "ammonite-ops" % "0.7.6",
+    "com.typesafe" % "config" % "1.3.0",
     "org.scalatest"     %% "scalatest"      % "2.2.6"            % Test,
     "ch.qos.logback"    % "logback-classic"     % "1.0.13"
   )

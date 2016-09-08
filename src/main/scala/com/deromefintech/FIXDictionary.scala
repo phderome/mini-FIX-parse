@@ -6,13 +6,12 @@ package com.deromefintech
 object FIXDictionary {
 
   import fastparse.all._
-
+  import com.typesafe.config.ConfigFactory
   def parseOfSeq(seq: Seq[TypedFIXTag], f: TypedFIXTag => P[TypedFIXTag]): P[TypedFIXTag] = {
     val pSeq: Seq[P[TypedFIXTag]] = seq.map(x => f(x))
     pSeq match {
       case (head :: tail) =>
         pSeq.fold[P[TypedFIXTag]](head)((y, x) => P(y | x))
-      case (head :: Nil) => head
     }
   }
 
@@ -153,6 +152,7 @@ object FIXDictionary {
   val executionReportMsgIdName = "8"
   val orderCxlRejectMsgIdName = "9"
 
+  val conf = ConfigFactory.load() // to load tags dynamically from a resource file
   // New Order Single
   val newOrderTags = Seq(clOrdIDTag, ordTypeTag, sideTag, symbolTag)
   val fullMsgTypeDAsMap = buildFullMsgP(controlTags, newOrderSingleMsgIdName, newOrderTags)
