@@ -1,4 +1,4 @@
-package main.scala.com.deromefintech
+package com.deromefintech
 
 // Acknowledgements to MIT Licence for Li Haoyi's work on FastParse
 /*
@@ -30,16 +30,6 @@ object FIXApplication {
 import com.deromefintech.FIXDictionary._
 
   def main(args: Array[String]): Unit = {
-
-   // val Parsed.Success(value, successIndex)  = tag.parse("55")
-    val test1 = msgTypeDTags.parse("54=2")
-    println(test1)  // 1
-    val Parsed.Success(value1, 4) = test1
-
-    val test2 = msgTypeDTags.parse("40=B")
-    println(test2)
-    val Parsed.Success(_, 4) = test2
-
     val test3 = tagId.parse("55")
     println(test3)  // 3
     val Parsed.Success(_, 2) = test3
@@ -47,10 +37,6 @@ import com.deromefintech.FIXDictionary._
     val test4 = tagId.parse("4b")
     println(test4)
     val Parsed.Success(_, 1) = test4
-
-    val test5 = msgTypeDTags.parse("54=0")
-    println(test5)  // 5
-    val Parsed.Success(_, 4) = test5
 
     val test6 = fullMsgTypeDAsMap.parse("35=D,43=N,54=1,10=100")
     println(s"test6 $test6 ${test6.index}")
