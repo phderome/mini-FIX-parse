@@ -167,8 +167,7 @@ object FIXDictionary {
   val fullMsgTypeGAsMap = buildFullMsgP(controlTags, cxlReplaceMsgIdName, cancelReplaceTags)
 
   // Order Cancel Reject
-  val orderCancelRejectTags = Seq(clOrdIDTag, orderIDTag, ordTypeTag, origClOrdIDTag,
-    sideTag, symbolTag)
+  val orderCancelRejectTags = Seq(clOrdIDTag, orderIDTag, origClOrdIDTag)
   val fullMsgType9AsMap = buildFullMsgP(controlTags, orderCxlRejectMsgIdName, orderCancelRejectTags)
 
   // Execution Report
