@@ -171,30 +171,24 @@ object FIXDictionary {
     myTags
   }
 
-  def buildMsgPFromConfig(msgIdConfigName: String, msgTypeIDTagName: String) = {
+  def buildMsgPFromConfig(msgIdConfigName: String) = {
     val configTags = conf.getString(msgIdConfigName)
     val obj = Json.parse(configTags)
+    val msgTypeIDTagName: String = (obj \ "msgType").as[String]
     val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
     val charTags = getTags(obj, "charTags").map(x => CharacterFIXTag(x.id, x.name)) // HACK, should not do this for all types sequentially.
     val bodyTags = stringTags ++ charTags
     buildFullMsgP(controlTags, msgTypeIDTagName, bodyTags).get // HACK (technically could be none, in practice not)
   }
 
-  // MsgID Info. HACK. These should be read from config in JSON.
-  val newOrderSingleMsgIdName = "D"
-  val cancelRequestMsgIdName = "F"
-  val cxlReplaceMsgIdName = "G"
-  val executionReportMsgIdName = "8"
-  val orderCxlRejectMsgIdName = "9"
-
   // New Order Single
-  val fullMsgTypeDAsMap = buildMsgPFromConfig("NewOrderTags", newOrderSingleMsgIdName)
+  val fullMsgTypeDAsMap = buildMsgPFromConfig("NewOrderTags")
   // Cancel Request
-  val fullMsgTypeFAsMap = buildMsgPFromConfig("CancelRequestTags", cancelRequestMsgIdName)
+  val fullMsgTypeFAsMap = buildMsgPFromConfig("CancelRequestTags")
   // Cancel Replace Request
-  val fullMsgTypeGAsMap = buildMsgPFromConfig("CancelReplaceTags", cxlReplaceMsgIdName)
+  val fullMsgTypeGAsMap = buildMsgPFromConfig("CancelReplaceTags")
   // Order Cancel Reject
-  val fullMsgType9AsMap = buildMsgPFromConfig("OrderCancelRejectTags", executionReportMsgIdName)
+  val fullMsgType9AsMap = buildMsgPFromConfig("OrderCancelRejectTags")
   // Execution Report
-  val fullMsgType8AsMap = buildMsgPFromConfig("ExecutionReportTags", orderCxlRejectMsgIdName)
+  val fullMsgType8AsMap = buildMsgPFromConfig("ExecutionReportTags")
 }

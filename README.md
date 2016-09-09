@@ -13,7 +13,7 @@ What I capture here is:
 - distinguishing 5 application messages (`D`, `F`, `G`, `8`, and `9`)
 - distinguishing header, body, and trailer (without accounting for payload or message length)
 - identifying some of the tags on the 5 messages.
-- Body tags are now external to code (msgType IDs like `D`, `F`, `G`, `8`, `9` should be as well), thanks to Play's JSON.
+- Body tags are now external to code, thanks to Play's JSON.
 - three distinct data types: `Int`, `String`, and `Boolean`. The types are not handled in sufficiently generic way though.
 
 Unit tests are meant to demonstrate some of the above features of the mini-parser.
