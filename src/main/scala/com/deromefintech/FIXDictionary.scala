@@ -3,6 +3,8 @@ package com.deromefintech
 import scala.collection.mutable.ArrayBuffer
 import fastparse.all._
 import com.typesafe.config.{ConfigFactory, Config}
+// FastParse claims to be faster than most and hence Play's JSON parser, however Play is more established in the broader Scala community.
+// Hence we use Play here in place of FastParse for JSON parsing.
 import play.api.libs.json._
 import play.api.libs.json.Reads._ // Custom validation helpers
 import play.api.libs.functional.syntax._
