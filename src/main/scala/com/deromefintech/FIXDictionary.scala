@@ -38,6 +38,7 @@ object FIXDictionary {
   type PTypedFixTag = Parser[TypedFIXTag]  // possible HACK, can this be parameterized by T and allow sequences to be parsed on different types?
   // Seems not at first.
   type PMapTypedFixTag = Parser[Map[Int, TypedFIXTag]]
+  type PFullMessage = Parser[(Map[Int, TypedFIXTag], Map[Int, TypedFIXTag], Map[Int, TypedFIXTag])]
 
   case class StringFIXTag(id: Int, name: String, value: String = "") extends TypedFIXTag {
     override val tagParser: Parser[String] = tagStringValue
@@ -88,7 +89,7 @@ object FIXDictionary {
     )(ConfigTagInfo.apply _)
 
   def getTags(obj: JsValue, path: String): Seq[ConfigTagInfo] = {
-    var myTags = ArrayBuffer[ConfigTagInfo]()
+    val myTags = ArrayBuffer[ConfigTagInfo]()
     val status = (obj \ path).validate[List[ConfigTagInfo]] match {
       case s: JsSuccess[List[ConfigTagInfo]] =>
         s.get.foreach(x => myTags.append(x))
@@ -106,58 +107,55 @@ object FIXDictionary {
     }
   }
 
-  def buildMsgTypeIDTag(value: String, tagName: String = "MsgType", code: Int = 35) =
-    P(s"$code=" ~ value).!.map(x => StringFIXTag(code, tagName, value))
+  def buildMsgTypeIDTag(value: String) =
+    P("35=" ~ value).!.map(x => StringFIXTag(35, "MsgType").setValue(value))
 
   def buildFullMsgP(controlPair: ControlTagsParserPair,
-                    msgTypeIDTagName: String,
-                    tags: Seq[TypedFIXTag]) = {
-    val msgTypeIDTag = buildMsgTypeIDTag(msgTypeIDTagName)
-    val tagParsers = parseOfSeq(tags, TypedFIXTag.parseBuilder)
-
-    val headerMap = buildHeaderBlock(P(controlPair.headerTags | msgTypeIDTag))
+                    msgTypeIDTagName: Option[String],
+                    tags: Seq[TypedFIXTag]) =
     // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
     // when building the map of tags.
-    for {x <- tagParsers
+    for {x <- parseOfSeq(tags, TypedFIXTag.parseBuilder) // tag Parsers
+         msgTypeID <- msgTypeIDTagName.map(buildMsgTypeIDTag)
+         headerMap = buildHeaderBlock(P(controlPair.headerTags | msgTypeID))
          msgBodyAsMap = buildBlock(x)
     } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
-  }
 
   def getHeaderTag = {
     // Should be pushed to config file parsing
-    val possDupeTag = BooleanFIXTag(43, "possDupe")
-    val headerTagsSeq = Seq(possDupeTag)
+    val headerTagsSeq = Seq(BooleanFIXTag(43, "possDupe"))
     parseOfSeq(headerTagsSeq, TypedFIXTag.parseBuilder)
   }
 
   def getTrailerTag = {
     // Should be pushed to config file parsing
-    val checkSumTag = StringFIXTag(10, "CheckSum")
-    val signatureLengthTag = IntegerFIXTag(93, "SignatureLength") // HACK: should be Length
-    val signatureTag = StringFIXTag(89, "Signature") // HACK: should be Data
-    val trailerTagsSeq = Seq(checkSumTag, signatureLengthTag, signatureTag)
+    val trailerTagsSeq = Seq(
+      StringFIXTag(10, "CheckSum"),
+      IntegerFIXTag(93, "SignatureLength"), // HACK: should be Length
+      StringFIXTag(89, "Signature")) // HACK: should be Data
     parseOfSeq(trailerTagsSeq, TypedFIXTag.parseBuilder)
   }
 
   case class ControlTagsParserPair(headerTags: PTypedFixTag, trailerMap: PMapTypedFixTag)
-  def getControlTags = {
+  val controlTagsParserPairFail = ControlTagsParserPair(Fail, Fail)
+  def getControlTags: ControlTagsParserPair = {
     val x = {
       for {
         h <- getHeaderTag
         t <- getTrailerTag.map(t => buildBlock(t, atEnd = true))
       } yield ControlTagsParserPair(h, t)
     }
-    x.get // HACK, we know it's not empty
+    x.fold[ControlTagsParserPair](controlTagsParserPairFail)(identity)
   }
 
-  def buildMsgPFromConfig(conf: Config, msgIdConfigName: String, controlTags: ControlTagsParserPair) = {
+  def buildMsgPFromConfig(conf: Config, msgIdConfigName: String, controlTags: ControlTagsParserPair): PFullMessage = {
     val configTags = conf.getString(msgIdConfigName)
     val obj = Json.parse(configTags)
-    val msgTypeIDTagName: String = (obj \ "msgType").as[String]
+    val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
     val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
     val charTags = getTags(obj, "charTags").map(x => CharacterFIXTag(x.id, x.name)) // HACK, should not do this for all types sequentially.
     val bodyTags = stringTags ++ charTags
-    buildFullMsgP(controlTags, msgTypeIDTagName, bodyTags).get // HACK (technically could be none, in practice not)
+    buildFullMsgP(controlTags, msgTypeIDTagName, bodyTags).fold[PFullMessage](Fail)(identity)
   }
 
   val controlTags = getControlTags
