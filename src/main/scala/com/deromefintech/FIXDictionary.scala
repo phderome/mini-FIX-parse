@@ -123,48 +123,45 @@ object FIXDictionary {
          msgBodyAsMap = buildBlock(x)
     } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
 
-  def buildControlTagsPFromConfig(conf: Config, key: String) = {
+  def buildTagsFromConfig(conf: Config, key: String) = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     val booleanTags = getTags(obj,"booleanTags").map(x => BooleanFIXTag(x.id, x.name))
     val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
     val charTags = getTags(obj, "charTags").map(x => CharacterFIXTag(x.id, x.name)) // HACK, should not do this for all types sequentially.
-    val allTags = booleanTags ++ stringTags ++ charTags
-    parseOfSeq(allTags, TypedFIXTag.parseBuilder)
+    booleanTags ++ stringTags ++ charTags
+  }
+
+  def buildPTagsPFromConfig(conf: Config, key: String) = {
+    val allTags = buildTagsFromConfig(conf, key)
+    parseOfSeq(allTags, TypedFIXTag.parseBuilder).fold[P[TypedFIXTag]](Fail)(identity)
   }
 
   case class ControlTagsParserPair(headerTags: PTypedFixTag, trailerMap: PMapTypedFixTag)
   val controlTagsParserPairFail = ControlTagsParserPair(Fail, Fail)
-  def getControlTags(conf: Config): ControlTagsParserPair = {
-    val x = {
-      for {
-        h <- buildControlTagsPFromConfig(conf, "headerTags")
-        t <- buildControlTagsPFromConfig(conf, "trailerTags").map(t => buildBlock(t, atEnd = true))
-      } yield ControlTagsParserPair(h, t)
-    }
-    x.fold[ControlTagsParserPair](controlTagsParserPairFail)(identity)
-  }
+  def getControlTags(conf: Config): ControlTagsParserPair =
+    ControlTagsParserPair(buildPTagsPFromConfig(conf, "headerTags"),
+      Some(buildPTagsPFromConfig(conf, "trailerTags")).fold[PMapTypedFixTag](Fail)(t => buildBlock(t, atEnd = true)))
 
-  def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair): PFullMessage = {
+  def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair, bodyTags: Map[Int, TypedFIXTag]): PFullMessage = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
-    val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
-    val charTags = getTags(obj, "charTags").map(x => CharacterFIXTag(x.id, x.name)) // HACK, should not do this for all types sequentially.
-    val bodyTags = stringTags ++ charTags
-    buildFullMsgP(controlTags, msgTypeIDTagName, bodyTags).fold[PFullMessage](Fail)(identity)
+    val msgBodyTags = getTags(obj, "tags").flatMap(t => bodyTags.get(t.id))
+    buildFullMsgP(controlTags, msgTypeIDTagName, msgBodyTags).fold[PFullMessage](Fail)(identity)
   }
 
   val conf = ConfigFactory.load()
   val controlTags = getControlTags(conf)
+  val bodyTags = buildTagsFromConfig(conf, "bodyTags").map(t => (t.id, t)).toMap
   // New Order Single
-  val fullMsgTypeDAsMap = buildMsgPFromConfig(conf, "NewOrderTags", controlTags)
+  val fullMsgTypeDAsMap = buildMsgPFromConfig(conf, "NewOrderTags", controlTags, bodyTags)
   // Cancel Request
-  val fullMsgTypeFAsMap = buildMsgPFromConfig(conf, "CancelRequestTags", controlTags)
+  val fullMsgTypeFAsMap = buildMsgPFromConfig(conf, "CancelRequestTags", controlTags, bodyTags)
   // Cancel Replace Request
-  val fullMsgTypeGAsMap = buildMsgPFromConfig(conf, "CancelReplaceTags", controlTags)
+  val fullMsgTypeGAsMap = buildMsgPFromConfig(conf, "CancelReplaceTags", controlTags, bodyTags)
   // Order Cancel Reject
-  val fullMsgType9AsMap = buildMsgPFromConfig(conf, "OrderCancelRejectTags", controlTags)
+  val fullMsgType9AsMap = buildMsgPFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
   // Execution Report
-  val fullMsgType8AsMap = buildMsgPFromConfig(conf, "ExecutionReportTags", controlTags)
+  val fullMsgType8AsMap = buildMsgPFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
 }
