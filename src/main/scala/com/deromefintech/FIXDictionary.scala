@@ -123,35 +123,30 @@ object FIXDictionary {
          msgBodyAsMap = buildBlock(x)
     } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
 
-  def getHeaderTag = {
-    // Should be pushed to config file parsing
-    val headerTagsSeq = Seq(BooleanFIXTag(43, "possDupe"))
-    parseOfSeq(headerTagsSeq, TypedFIXTag.parseBuilder)
-  }
-
-  def getTrailerTag = {
-    // Should be pushed to config file parsing
-    val trailerTagsSeq = Seq(
-      StringFIXTag(10, "CheckSum"),
-      IntegerFIXTag(93, "SignatureLength"), // HACK: should be Length
-      StringFIXTag(89, "Signature")) // HACK: should be Data
-    parseOfSeq(trailerTagsSeq, TypedFIXTag.parseBuilder)
+  def buildControlTagsPFromConfig(conf: Config, key: String) = {
+    val configTags = conf.getString(key)
+    val obj = Json.parse(configTags)
+    val booleanTags = getTags(obj,"booleanTags").map(x => BooleanFIXTag(x.id, x.name))
+    val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
+    val charTags = getTags(obj, "charTags").map(x => CharacterFIXTag(x.id, x.name)) // HACK, should not do this for all types sequentially.
+    val allTags = booleanTags ++ stringTags ++ charTags
+    parseOfSeq(allTags, TypedFIXTag.parseBuilder)
   }
 
   case class ControlTagsParserPair(headerTags: PTypedFixTag, trailerMap: PMapTypedFixTag)
   val controlTagsParserPairFail = ControlTagsParserPair(Fail, Fail)
-  def getControlTags: ControlTagsParserPair = {
+  def getControlTags(conf: Config): ControlTagsParserPair = {
     val x = {
       for {
-        h <- getHeaderTag
-        t <- getTrailerTag.map(t => buildBlock(t, atEnd = true))
+        h <- buildControlTagsPFromConfig(conf, "headerTags")
+        t <- buildControlTagsPFromConfig(conf, "trailerTags").map(t => buildBlock(t, atEnd = true))
       } yield ControlTagsParserPair(h, t)
     }
     x.fold[ControlTagsParserPair](controlTagsParserPairFail)(identity)
   }
 
-  def buildMsgPFromConfig(conf: Config, msgIdConfigName: String, controlTags: ControlTagsParserPair): PFullMessage = {
-    val configTags = conf.getString(msgIdConfigName)
+  def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair): PFullMessage = {
+    val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
     val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
@@ -160,8 +155,8 @@ object FIXDictionary {
     buildFullMsgP(controlTags, msgTypeIDTagName, bodyTags).fold[PFullMessage](Fail)(identity)
   }
 
-  val controlTags = getControlTags
   val conf = ConfigFactory.load()
+  val controlTags = getControlTags(conf)
   // New Order Single
   val fullMsgTypeDAsMap = buildMsgPFromConfig(conf, "NewOrderTags", controlTags)
   // Cancel Request
