@@ -86,7 +86,7 @@ object FIXDictionary {
 
   case class BasicConfigTagInfo(id: Int)
   // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
-  implicit val myTypeRead = (__ \ "id").read[Int].map(BasicConfigTagInfo)
+  implicit val myTypeRead = (JsPath \ "id").read[Int].map(BasicConfigTagInfo)
   def getBasicTags(obj: JsValue, path: String): Seq[BasicConfigTagInfo] = {
     val myTags = ArrayBuffer[BasicConfigTagInfo]()
     val status = (obj \ path).validate[List[BasicConfigTagInfo]] match {
