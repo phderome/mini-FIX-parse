@@ -100,10 +100,11 @@ object FIXDictionary {
     myTags
   }
 
-  case class ConfigTagInfo(id: Int, name: String)
+  case class ConfigTagInfo(id: Int, name: String, `type`: String)
   implicit val configTagReads: Reads[ConfigTagInfo] = (
     (JsPath \ "id").read[Int] and
-      (JsPath \ "name").read[String]
+      (JsPath \ "name").read[String] and
+        (JsPath \ "type").read[String]
     )(ConfigTagInfo.apply _)
 
   def getTags(obj: JsValue, path: String): Seq[ConfigTagInfo] = {
@@ -142,10 +143,13 @@ object FIXDictionary {
   def buildTagsFromConfig(conf: Config, key: String) = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
-    val booleanTags = getTags(obj,"booleanTags").map(x => BooleanFIXTag(x.id, x.name))
-    val stringTags = getTags(obj,"stringTags").map(x => StringFIXTag(x.id, x.name))
-    val charTags = getTags(obj, "charTags").map(x => CharacterFIXTag(x.id, x.name)) // HACK, should not do this for all types sequentially.
-    booleanTags ++ stringTags ++ charTags
+    getTags(obj, "tags").map(x => x.`type` match {
+      case "Boolean" => BooleanFIXTag(x.id, x.name)
+      case "Int" => IntegerFIXTag(x.id, x.name)
+      case "Char" => CharacterFIXTag(x.id, x.name)
+      case "String" => StringFIXTag(x.id, x.name)
+
+    })
   }
 
   def buildPTagsPFromConfig(conf: Config, key: String) = {
