@@ -84,6 +84,20 @@ object FIXDictionary {
     block.map(_.map { y: TypedFIXTag => (y.id, y) }.toMap)
   }
 
+  case class BasicConfigTagInfo(id: Int)
+  // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
+  implicit val myTypeRead = (__ \ "id").read[Int].map(BasicConfigTagInfo)
+  def getBasicTags(obj: JsValue, path: String): Seq[BasicConfigTagInfo] = {
+    val myTags = ArrayBuffer[BasicConfigTagInfo]()
+    val status = (obj \ path).validate[List[BasicConfigTagInfo]] match {
+      case s: JsSuccess[List[BasicConfigTagInfo]] =>
+        s.get.foreach(x => myTags.append(x))
+      case e: JsError =>
+        println(s"failure parsing list of tags $e of type for $path")
+    }
+    myTags
+  }
+
   case class ConfigTagInfo(id: Int, name: String)
   implicit val configTagReads: Reads[ConfigTagInfo] = (
     (JsPath \ "id").read[Int] and
@@ -143,11 +157,12 @@ object FIXDictionary {
     ControlTagsParserPair(buildPTagsPFromConfig(conf, "headerTags"),
       Some(buildPTagsPFromConfig(conf, "trailerTags")).fold[PMapTypedFixTag](Fail)(t => buildBlock(t, atEnd = true)))
 
-  def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair, bodyTags: Map[Int, TypedFIXTag]): PFullMessage = {
+  def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
+                          bodyTags: Map[Int, TypedFIXTag]): PFullMessage = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
-    val msgBodyTags = getTags(obj, "tags").flatMap(t => bodyTags.get(t.id))
+    val msgBodyTags = getBasicTags(obj, "tags").flatMap(t => bodyTags.get(t.id))
     buildFullMsgP(controlTags, msgTypeIDTagName, msgBodyTags).fold[PFullMessage](Fail)(identity)
   }
 
