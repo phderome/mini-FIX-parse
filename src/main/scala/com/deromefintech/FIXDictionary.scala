@@ -15,53 +15,54 @@ import play.api.libs.json._
   */
 object FIXDictionary {
 
-  val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => new Integer(s.toInt)))   // HACK, Java Object type
+  val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => s.toInt))
   val word = P(CharIn('0' to '9', 'a' to 'z', 'A' to 'Z')).rep(1).!
   val tagId = intNumber
   val tagStringValue = word
   val SOH = 1.toChar.toString
   // requires lookahead for tag separator
-  val tagCharValue = AnyChar.!.map(x => new Character(x.charAt(0))) ~ (End | & (SOH)) // HACK, Java Object type
+  val tagCharValue = AnyChar.!.map(x => x.charAt(0)) ~ (End | & (SOH))
 
-  val tagBooleanValue = P("Y" | "N").!.map(s => new java.lang.Boolean(s == "Y")) // HACK, Java Object type
+  val tagBooleanValue = P("Y" | "N").!.map(s =>  s == "Y")
   val tagIntValue = intNumber
   val tagSep = P(SOH)
 
-  trait TypedFIXTag {
+  trait TypedFIXTag[+T] {
     val id: Int
     val name: String
-    val tagParser: Parser[Object] // Big HACK, somehow should be able to use native types, a type parameter leads to some difficulties for now...
-    def setValue(s: String): TypedFIXTag
+    val tagParser: Parser[T]
+    def setValue(s: String): TypedFIXTag[T]
   }
 
   object TypedFIXTag {
-    def parseBuilder(t: TypedFIXTag): Parser[TypedFIXTag] =
+    def parseBuilder(t: TypedFIXTag[Any]): Parser[TypedFIXTag[Any]] =
       P(s"${t.id}=" ~ t.tagParser).!.map { s: String => t.setValue(s)
       }
   }
 
-  type PTypedFixTag = Parser[TypedFIXTag]  // possible HACK, can this be parameterized by T and allow sequences to be parsed on different types?
-  // Seems not at first.
-  type PMapTypedFixTag = Parser[Map[Int, TypedFIXTag]]
-  type PFullMessage = Parser[(Map[Int, TypedFIXTag], Map[Int, TypedFIXTag], Map[Int, TypedFIXTag])]
+  type PTypedFixTag = Parser[TypedFIXTag[Any]]
+  type PMapTypedFixTag = Parser[Map[Int, TypedFIXTag[Any]]]
+  type PFullMessage = Parser[(Map[Int, TypedFIXTag[Any]], Map[Int, TypedFIXTag[Any]], Map[Int, TypedFIXTag[Any]])]
 
-  case class StringFIXTag(id: Int, name: String, value: String = "") extends TypedFIXTag {
-    override val tagParser: Parser[String] = tagStringValue
-    def setValue(s: String) = this.copy(value = s)
+  // hack Java String does not extend Any, so we "promote" such Strings to StringWrap a case class that does extend Any
+  case class StringWrap(value: String)
+  case class StringFIXTag(id: Int, name: String, value: StringWrap = StringWrap("")) extends TypedFIXTag[StringWrap] {
+    override val tagParser: Parser[StringWrap] = tagStringValue.map(x => StringWrap(x))
+    def setValue(s: String) = this.copy(value = StringWrap(s))
   }
 
-  case class CharacterFIXTag(id: Int, name: String, value: Character = Char.MinValue) extends TypedFIXTag {
-    override val tagParser: Parser[Character] = tagCharValue
+  case class CharFIXTag(id: Int, name: String, value: Character = Char.MinValue) extends TypedFIXTag[Char] {
+    override val tagParser: Parser[Char] = tagCharValue
     def setValue(s: String) = this.copy(value = s.charAt(0))
   }
 
-  case class IntegerFIXTag(id: Int, name: String, value: Int = 0) extends TypedFIXTag {
-    override val tagParser: Parser[Integer] = tagIntValue
+  case class IntFIXTag(id: Int, name: String, value: Int = 0) extends TypedFIXTag[Int] {
+    override val tagParser: Parser[Int] = tagIntValue
     def setValue(s: String) = this.copy(value = s.toInt)
   }
 
-  case class BooleanFIXTag(id: Int, name: String, value: Boolean = false) extends TypedFIXTag {
-    override val tagParser: Parser[java.lang.Boolean] = tagBooleanValue
+  case class BooleanFIXTag(id: Int, name: String, value: Boolean = false) extends TypedFIXTag[Boolean] {
+    override val tagParser: Parser[Boolean] = tagBooleanValue
     def setValue(s: String) = this.copy(value = s == "Y")
   }
 
@@ -72,19 +73,19 @@ object FIXDictionary {
       else P(tag ~ tagTail)
 
     val block = rawBlock.map {
-      case (x: TypedFIXTag, y: Seq[TypedFIXTag]) => y :+ x
+      case (x: TypedFIXTag[Any], y: Seq[TypedFIXTag[Any]]) => y :+ x
     }
     block.map(
-      x => x.map { y: TypedFIXTag => (y.id, y) }.toMap)
+      x => x.map { y: TypedFIXTag[Any] => (y.id, y) }.toMap)
   }
 
   def buildBlock(tag: PTypedFixTag, atEnd: Boolean = false): PMapTypedFixTag = {
     val tagTail = P(tagSep ~ tag).rep
     val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
     val block = rawBlock.map {
-      case (x: TypedFIXTag, y: Seq[TypedFIXTag]) => y :+ x
+      case (x: TypedFIXTag[Any], y: Seq[TypedFIXTag[Any]]) => y :+ x
     }
-    block.map(_.map { y: TypedFIXTag => (y.id, y) }.toMap)
+    block.map(_.map { y: TypedFIXTag[Any] => (y.id, y) }.toMap)
   }
 
   case class BasicConfigTagInfo(id: Int)
@@ -119,11 +120,11 @@ object FIXDictionary {
     myTags
   }
 
-  def parseOfSeq(seq: Seq[TypedFIXTag], f: TypedFIXTag => P[TypedFIXTag]): Option[P[TypedFIXTag]] = {
-    val pSeq: Seq[P[TypedFIXTag]] = seq.map(x => f(x))
+  def parseOfSeq(seq: Seq[TypedFIXTag[Any]], f: TypedFIXTag[Any] => P[TypedFIXTag[Any]]): Option[P[TypedFIXTag[Any]]] = {
+    val pSeq: Seq[P[TypedFIXTag[Any]]] = seq.map(x => f(x))
     pSeq match {
       case x if x.isEmpty => None
-      case z => Some(z.fold[P[TypedFIXTag]](z.head)((y, x) => P(y | x)))
+      case z => Some(z.fold[P[TypedFIXTag[Any]]](z.head)((y, x) => P(y | x)))
     }
   }
 
@@ -132,7 +133,7 @@ object FIXDictionary {
 
   def buildFullMsgP(controlPair: ControlTagsParserPair,
                     msgTypeIDTagName: Option[String],
-                    tags: Seq[TypedFIXTag]) =
+                    tags: Seq[TypedFIXTag[Any]]) =
     // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
     // when building the map of tags.
     for {x <- parseOfSeq(tags, TypedFIXTag.parseBuilder) // tag Parsers
@@ -141,21 +142,22 @@ object FIXDictionary {
          msgBodyAsMap = buildBlock(x)
     } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
 
-  def buildTagsFromConfig(conf: Config, key: String) = {
+  def buildTagsFromConfig(conf: Config, key: String): Seq[TypedFIXTag[Any]] = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
-    getTags(obj, "tags").map(x => x.`type` match {
-      case "Boolean" => BooleanFIXTag(x.id, x.name)
-      case "Int" => IntegerFIXTag(x.id, x.name)
-      case "Char" => CharacterFIXTag(x.id, x.name)
-      case "String" => StringFIXTag(x.id, x.name)
-
-    })
+    getTags(obj, "tags").map{x: ConfigTagInfo =>
+      x.`type` match {
+        case "Boolean" => BooleanFIXTag(x.id, x.name): TypedFIXTag[Boolean]
+        case "Int" => IntFIXTag(x.id, x.name): TypedFIXTag[Int]
+        case "Char" => CharFIXTag(x.id, x.name): TypedFIXTag[Char]
+        case _ => StringFIXTag(x.id, x.name): TypedFIXTag[StringWrap]
+      }
+    }
   }
 
   def buildPTagsPFromConfig(conf: Config, key: String) = {
     val allTags = buildTagsFromConfig(conf, key)
-    parseOfSeq(allTags, TypedFIXTag.parseBuilder).fold[P[TypedFIXTag]](Fail)(identity)
+    parseOfSeq(allTags, TypedFIXTag.parseBuilder).fold[P[TypedFIXTag[Any]]](Fail)(identity)
   }
 
   case class ControlTagsParserPair(headerTags: PTypedFixTag, trailerMap: PMapTypedFixTag)
@@ -165,7 +167,7 @@ object FIXDictionary {
       Some(buildPTagsPFromConfig(conf, "trailerTags")).fold[PMapTypedFixTag](Fail)(t => buildBlock(t, atEnd = true)))
 
   def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
-                          bodyTags: Map[Int, TypedFIXTag]): PFullMessage = {
+                          bodyTags: Map[Int, TypedFIXTag[Any]]): PFullMessage = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
