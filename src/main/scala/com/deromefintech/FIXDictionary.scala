@@ -19,12 +19,13 @@ object FIXDictionary {
   val word = P(CharIn('0' to '9', 'a' to 'z', 'A' to 'Z')).rep(1).!
   val tagId = intNumber
   val tagStringValue = word
+  val SOH = 1.toChar.toString
   // requires lookahead for tag separator
-  val tagCharValue = AnyChar.!.map(x => new Character(x.charAt(0))) ~ (End | &(",")) // HACK, Java Object type
+  val tagCharValue = AnyChar.!.map(x => new Character(x.charAt(0))) ~ (End | & (SOH)) // HACK, Java Object type
 
   val tagBooleanValue = P("Y" | "N").!.map(s => new java.lang.Boolean(s == "Y")) // HACK, Java Object type
   val tagIntValue = intNumber
-  val tagSep = P(",") // HACK: in reality, should be SOH 0x01 ASCII
+  val tagSep = P(SOH)
 
   trait TypedFIXTag {
     val id: Int
