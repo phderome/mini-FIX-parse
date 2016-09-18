@@ -45,7 +45,10 @@ object FIXDictionary {
   type PFullMessage = Parser[(Map[Int, TypedFIXTag[Any]], Map[Int, TypedFIXTag[Any]], Map[Int, TypedFIXTag[Any]])]
 
   // hack Java String does not extend Any, so we "promote" such Strings to StringWrap a case class that does extend Any
-  case class StringWrap(value: String)
+  implicit class StringWrap(val value: String) extends AnyVal {
+    override def toString = value
+  }
+
   case class StringFIXTag(id: Int, name: String, value: StringWrap = StringWrap("")) extends TypedFIXTag[StringWrap] {
     override val tagParser: Parser[StringWrap] = tagStringValue.map(x => StringWrap(x))
     def setValue(s: String) = this.copy(value = StringWrap(s))
