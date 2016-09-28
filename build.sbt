@@ -22,10 +22,9 @@ scalacOptions ++= Seq(
 //ideaExcludeFolders += ".idea_modules"
 
 libraryDependencies ++= {
-  val scalaCompiler = "2.11.8"
   Seq(
-    "org.scala-lang"    % "scala-compiler"      % scalaCompiler,
-    "org.scala-lang"    % "scala-reflect"       % scalaCompiler,
+    "org.scala-lang"    % "scala-compiler"      % scalaVersion.value,
+    "org.scala-lang"    % "scala-reflect"       % scalaVersion.value,
     "org.typelevel" %% "cats" % "0.6.1",
     "com.lihaoyi" %% "fastparse" % "0.3.7",
     "com.lihaoyi" %% "ammonite-ops" % "0.7.6",
