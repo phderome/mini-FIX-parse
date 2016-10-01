@@ -1,4 +1,4 @@
-package com.deromefintech
+package com.deromefintech.dictionary
 
 // Acknowledgements to MIT Licence for Li Haoyi's work on FastParse
 /*
@@ -27,7 +27,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 import fastparse.core.Parsed
 
 object FIXApplication {
-import com.deromefintech.FIXDictionary._
+import FIXDictionary._
 
   def main(args: Array[String]): Unit = {
     val SOH = 1.toChar // real delimiter in FIX, but for clarity in testing we use commas and replace it with SOH thereafter
