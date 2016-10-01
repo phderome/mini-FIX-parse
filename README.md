@@ -14,8 +14,8 @@ What I capture here is:
 - distinguishing 5 application messages (`D`, `F`, `G`, `8`, and `9`)
 - distinguishing header, body, and trailer (without accounting for payload or message length)
 - identifying some of the tags on the 5 messages.
-- Body tags are now external to code, thanks to Play's JSON.
-- four distinct data types: `Int`, `Char`, `String`, and `Boolean`. The types are not handled in sufficiently generic way though.
+- Tags are external to code, thanks to Play's JSON but could also use FastParse for JSON parsing.
+- four distinct data types: `Int`, `Char`, `String`, and `Boolean`.
 
 Unit tests are meant to demonstrate some of the above features of the mini-parser.
 
@@ -23,15 +23,8 @@ Obvious limitations for those familiar with FIX (**this is a toy after all**):
 - There is no serialization from the mapped data back to a FIX message.
 - payload not handled to parse say about 100-200 characters to find message boundaries. Conceptually, this could be a first phase parse with the parser shown 
 working at a second phase
-- tag separator is in real life FIX a non-printable character 0x01, I use comma as a proxy with implied assumption that comma not be used in FIX tag content 
-(in a real app, this would be different, however it makes for less mundane code and simpler presentation of test results with a nice printout)
 - lots of FIX tags are not specified
 - multiple versions of FIX protocol should be handled
 - Administrative messages are not supported but are essential (Logon, Logout, retransmission requests, etc...). This could be viewed as a FIX engine feature 
 rather than a parser
 
-Obvious limitations for those familiar with Scala:
-- native Scala types for `Char`, `Int` and `Boolean` should be supported in place of the Java ones I have. The Java ones should be seen as interim solution as I am 
-having some difficulty with polymorphism and generic parameterized data types  here and there.
-- Several hacks explicitly noted as such in code, it's work in progress.
- 
