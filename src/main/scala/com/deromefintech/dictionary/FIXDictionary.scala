@@ -5,7 +5,7 @@ import fastparse.all._
 
 // FastParse claims to be faster than most and hence Play's JSON parser,
 // however Play is more established in the broader Scala community.
-// Hence we use Play here in place of FastParse for JSON parsing.
+// Hence we use Play here in place of FastParse (or Typelevel's Circe) for JSON parsing.
 // In any event the Play parsing occurs on start up when initializing data FIXDictionary from external file resources
 // and not continuously for client use.
 import play.api.libs.functional.syntax._
@@ -17,10 +17,9 @@ import play.api.libs.json._
   */
 object FIXDictionary extends UtilTypes {
   val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
-  val word = P(CharIn('0' to '9', 'a' to 'z', 'A' to 'Z')).rep(1).!
+  val tagStringValue = P(CharIn(' ' to '~')).rep(1).! // printable character (Ascii 32 to 126).
   val tagId = intNumber
-  val tagStringValue = word
-  val SOH = 1.toChar.toString
+  val SOH = 1.toChar.toString // the FIX tag separator
   // requires lookahead for tag separator
   val tagCharValue = AnyChar.!.map(x => PChar(x.charAt(0))) ~ (End | & (SOH))
 
@@ -28,22 +27,22 @@ object FIXDictionary extends UtilTypes {
   val tagIntValue = intNumber
   val tagSep = P(SOH)
 
-  case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TypedFIXTag[PString] {
+  case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TypedFIXTag {
     override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))
     def setValue(s: String) = this.copy(value = PString(s))
   }
 
-  case class CharFIXTag(id: Int, name: String, value: PChar = PChar(Char.MinValue)) extends TypedFIXTag[PChar] {
+  case class CharFIXTag(id: Int, name: String, value: PChar = PChar(Char.MinValue)) extends TypedFIXTag {
     override val tagParser: Parser[PChar] = tagCharValue
     def setValue(s: String) = this.copy(value = PChar(s.charAt(0)))
   }
 
-  case class IntFIXTag(id: Int, name: String, value: PInt = PInt(0)) extends TypedFIXTag[PInt] {
+  case class IntFIXTag(id: Int, name: String, value: PInt = PInt(0)) extends TypedFIXTag {
     override val tagParser: Parser[PInt] = tagIntValue
     def setValue(s: String) = this.copy(value = PInt(s.toInt))
   }
 
-  case class BooleanFIXTag(id: Int, name: String, value: PBoolean = PBoolean(false)) extends TypedFIXTag[PBoolean] {
+  case class BooleanFIXTag(id: Int, name: String, value: PBoolean = PBoolean(false)) extends TypedFIXTag {
     override val tagParser: Parser[PBoolean] = tagBooleanValue
     def setValue(s: String) = this.copy(value = PBoolean(s == "Y"))
   }
@@ -55,19 +54,19 @@ object FIXDictionary extends UtilTypes {
       else P(tag ~ tagTail)
 
     val block = rawBlock.map {
-      case (x: TypedFIXTagValue, y: TypedFIXTagValues) => y :+ x
+      case (x: TypedFIXTag, y: TypedFIXTagValues) => y :+ x
     }
     block.map(
-      x => x.map { y: TypedFIXTagValue => (y.id, y) }.toMap)
+      x => x.map { y: TypedFIXTag => (y.id, y) }.toMap)
   }
 
   def buildBlock(tag: PTypedFixTag, atEnd: Boolean = false): PMapTypedFixTag = {
     val tagTail = P(tagSep ~ tag).rep
     val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
     val block = rawBlock.map {
-      case (x: TypedFIXTagValue, y: TypedFIXTagValues) => y :+ x
+      case (x: TypedFIXTag, y: TypedFIXTagValues) => y :+ x
     }
-    block.map(_.map { y: TypedFIXTagValue => (y.id, y) }.toMap)
+    block.map(_.map { y: TypedFIXTag => (y.id, y) }.toMap)
   }
 
   case class BasicConfigTagInfo(id: Int)
@@ -102,7 +101,7 @@ object FIXDictionary extends UtilTypes {
     myTags
   }
 
-  def parseOfSeq(seq: TypedFIXTagValues, f: TypedFIXTagValue => PTypedFixTag): Option[PTypedFixTag] = {
+  def parseOfSeq(seq: TypedFIXTagValues, f: TypedFIXTag => PTypedFixTag): Option[PTypedFixTag] = {
     val pSeq: Seq[PTypedFixTag] = seq.map(x => f(x))
     pSeq match {
       case x if x.isEmpty => None
@@ -129,10 +128,10 @@ object FIXDictionary extends UtilTypes {
     val obj = Json.parse(configTags)
     getTags(obj, "tags").map{x: ConfigTagInfo =>
       x.`type` match {
-        case "Boolean" => BooleanFIXTag(x.id, x.name): TypedFIXTag[PBoolean]
-        case "Int" => IntFIXTag(x.id, x.name): TypedFIXTag[PInt]
-        case "Char" => CharFIXTag(x.id, x.name): TypedFIXTag[PChar]
-        case _ => StringFIXTag(x.id, x.name): TypedFIXTag[PString]
+        case "Boolean" => BooleanFIXTag(x.id, x.name)
+        case "Int" => IntFIXTag(x.id, x.name)
+        case "Char" => CharFIXTag(x.id, x.name)
+        case _ => StringFIXTag(x.id, x.name)
       }
     }
   }
@@ -149,7 +148,7 @@ object FIXDictionary extends UtilTypes {
       Some(buildPTagsPFromConfig(conf, "trailerTags")).fold[PMapTypedFixTag](Fail)(t => buildBlock(t, atEnd = true)))
 
   def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
-                          bodyTags: Map[Int, TypedFIXTagValue]): PFullMessage = {
+                          bodyTags: Map[Int, TypedFIXTag]): PFullMessage = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
