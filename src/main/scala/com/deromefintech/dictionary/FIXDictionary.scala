@@ -3,37 +3,19 @@ package com.deromefintech.dictionary
 import com.typesafe.config.{Config, ConfigFactory}
 import fastparse.all._
 
-import scala.collection.mutable.ArrayBuffer
 // FastParse claims to be faster than most and hence Play's JSON parser,
 // however Play is more established in the broader Scala community.
 // Hence we use Play here in place of FastParse for JSON parsing.
+// In any event the Play parsing occurs on start up when initializing data FIXDictionary from external file resources
+// and not continuously for client use.
 import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 
-trait TypedFIXTag[+T] {
-  val id: Int
-  val name: String
-  val tagParser: Parser[T]
-  def setValue(s: String): TypedFIXTag[T]
-}
-
-sealed trait PValue
-case class PInt(v: Int) extends PValue
-case class PString(v: String) extends PValue
-case class PChar(v: Char) extends PValue
-case class PBoolean(v: Boolean) extends PValue
-
 /**
   * Created by philippederome on 2016-09-05.
   */
-object FIXDictionary {
-  type TypedFIXTagValue = TypedFIXTag[PValue]
-  type TypedFIXTagValues = Seq[TypedFIXTagValue]
-  type PTypedFixTag = Parser[TypedFIXTagValue]
-  type PMapTypedFixTag = Parser[Map[Int, TypedFIXTagValue]]
-  type PFullMessage = Parser[(Map[Int, TypedFIXTagValue], Map[Int, TypedFIXTagValue], Map[Int, TypedFIXTagValue])]
-
+object FIXDictionary extends UtilTypes {
   val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
   val word = P(CharIn('0' to '9', 'a' to 'z', 'A' to 'Z')).rep(1).!
   val tagId = intNumber
@@ -45,11 +27,6 @@ object FIXDictionary {
   val tagBooleanValue = P("Y" | "N").!.map(s => PBoolean(s == "Y"))
   val tagIntValue = intNumber
   val tagSep = P(SOH)
-
-  object TypedFIXTag {
-    def parseBuilder(t: TypedFIXTagValue): PTypedFixTag =
-      P(s"${t.id}=" ~ t.tagParser).!.map { s: String => t.setValue(s) }
-  }
 
   case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TypedFIXTag[PString] {
     override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))
@@ -97,7 +74,7 @@ object FIXDictionary {
   // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
   implicit val myTypeRead = (JsPath \ "id").read[Int].map(BasicConfigTagInfo)
   def getBasicTags(obj: JsValue, path: String): Seq[BasicConfigTagInfo] = {
-    val myTags = ArrayBuffer[BasicConfigTagInfo]()
+    val myTags = scala.collection.mutable.ArrayBuffer[BasicConfigTagInfo]()
     val status = (obj \ path).validate[List[BasicConfigTagInfo]] match {
       case s: JsSuccess[List[BasicConfigTagInfo]] =>
         s.get.foreach(x => myTags.append(x))
@@ -115,7 +92,7 @@ object FIXDictionary {
     )(ConfigTagInfo.apply _)
 
   def getTags(obj: JsValue, path: String): Seq[ConfigTagInfo] = {
-    val myTags = ArrayBuffer[ConfigTagInfo]()
+    val myTags = scala.collection.mutable.ArrayBuffer[ConfigTagInfo]()
     val status = (obj \ path).validate[List[ConfigTagInfo]] match {
       case s: JsSuccess[List[ConfigTagInfo]] =>
         s.get.foreach(x => myTags.append(x))
