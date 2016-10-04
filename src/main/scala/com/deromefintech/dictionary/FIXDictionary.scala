@@ -19,13 +19,14 @@ object FIXDictionary extends UtilTypes {
   val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
   val tagStringValue = P(CharIn(' ' to '~')).rep(1).! // printable character (Ascii 32 to 126).
   val tagId = intNumber
-  val SOH = 1.toChar.toString // the FIX tag separator
+  val SOH = 1.toChar // the FIX tag separator
+  val SOHAsString = 1.toChar.toString // the FIX tag separator
   // requires lookahead for tag separator
-  val tagCharValue = AnyChar.!.map(x => PChar(x.charAt(0))) ~ (End | & (SOH))
+  val tagCharValue = AnyChar.!.map(x => PChar(x.charAt(0))) ~ (End | & (SOHAsString))
 
   val tagBooleanValue = P("Y" | "N").!.map(s => PBoolean(s == "Y"))
   val tagIntValue = intNumber
-  val tagSep = P(SOH)
+  val tagSep = P(SOHAsString)
 
   case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TypedFIXTag {
     override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))

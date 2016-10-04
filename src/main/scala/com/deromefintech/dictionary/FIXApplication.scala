@@ -29,7 +29,6 @@ object FIXApplication {
 import FIXDictionary._
 
   def main(args: Array[String]): Unit = {
-    val SOH = 1.toChar // real delimiter in FIX, but for clarity in testing we use commas and replace it with SOH thereafter
     val test3 = tagId.parse("55")
     println(test3)  // 3
     val Parsed.Success(_, 2) = test3

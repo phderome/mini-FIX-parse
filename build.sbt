@@ -18,9 +18,6 @@ scalacOptions ++= Seq(
   "-language:_"
 )
 
-//ideaExcludeFolders += ".idea"
-//ideaExcludeFolders += ".idea_modules"
-
 libraryDependencies ++= {
   Seq(
     "org.scala-lang"    % "scala-compiler"      % scalaVersion.value,
