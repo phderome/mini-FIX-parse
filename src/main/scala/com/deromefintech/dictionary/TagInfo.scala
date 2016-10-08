@@ -16,7 +16,8 @@ trait TagInfo extends BasicMetaData {
   def setValue(s: String): TagInfo
 }
 
-object TagInfo extends UtilTypes {
+object TagInfo {
+  type PTagInfo = Parser[TagInfo]
   def parseBuilder(t: TagInfo): PTagInfo =
     P(s"${t.id}=" ~ t.tagParser).!.map { s: String =>
       t.setValue(s)

@@ -20,17 +20,17 @@ class FIXDictionaryTest extends UnitTest {
   }
 
   // we construct pseudo FIX messages with commas as separators for legibility but need to update to SOH for real.
-  def correctTagSeparator(data: String) = data.replace(',', SOH)
+  def correctTagSeparator(data: String) = data.replace(',', SOHAsString(0))
 
-  behavior of "tagId" // a sequence of digits with a FIX message consisting of tagId=value assignments separated by SOH and a few more details
+  behavior of "tagIntValue" // a sequence of digits with a FIX message consisting of tagId=value assignments separated by SOH and a few more details
   it should "return correct success index consuming all" in {
     val data = "55"
-    val P = tagId.parse(data)
+    val P = tagIntValue.parse(data)
     checkResult(P, data.length, isSuccess = true)
   }
   it should "return correct success index not consuming all" in {
     val data = "4b"
-    val P = tagId.parse("4b")
+    val P = tagIntValue.parse("4b")
     checkResult(P, "4".length, isSuccess = true) // this yields 4b=value to be invalid in a larger FIX context, because index 1 < 2 the size of 4b
   }
 

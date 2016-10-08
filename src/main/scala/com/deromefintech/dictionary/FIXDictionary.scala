@@ -1,5 +1,6 @@
 package com.deromefintech.dictionary
 
+import com.deromefintech.dictionary.TagInfo.PTagInfo
 import com.typesafe.config.{Config, ConfigFactory}
 import fastparse.all._
 // FastParse claims to be faster than most generic JSON parsers,
@@ -14,7 +15,21 @@ import play.api.libs.json.{JsPath, Reads, JsValue, Json}
 /**
   * Created by philippederome on 2016-09-05.
   */
-object FIXDictionary extends UtilTypes with PlayJSReads {
+object FIXDictionary extends PlayJSReads {
+  type TagInfos = Seq[TagInfo]
+  type TagId = Int
+  type TagIdToMetaData = Map[TagId, BasicMetaData]
+  type TagIdToTagInfo = Map[TagId, TagInfo]
+  type PTagIdToTagInfo = Parser[TagIdToTagInfo]
+  type PMessage = Parser[(TagIdToTagInfo, TagIdToTagInfo, TagIdToTagInfo)]
+  case class TagIdWrapper(id: TagId)
+  case class MetaData(id: Int, name: String, `type`: String) extends BasicMetaData
+  case class ControlTagsParserPair(headerTags: PTagInfo, trailerMap: PTagIdToTagInfo)
+
+  val MSG_TYPE_ID = 35
+  val TAG_VALUE_SEP = "="
+  val SOHAsString = 1.toChar.toString // the FIX tag separator as String
+
   // Some Reads that can be used for getElements usage
   val configTagReads: Reads[MetaData] = (
     (JsPath \ "id").read[Int] and
@@ -25,20 +40,12 @@ object FIXDictionary extends UtilTypes with PlayJSReads {
   // (requires a TagIdWrapper here)
   val tagIdReads = (JsPath \ "id").read[Int].map(TagIdWrapper)
 
-  val MSG_TYPE_ID = 35
-  val TAG_VALUE_SEP = "="
-  val SOH = 1.toChar // the FIX tag separator
-
-  val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
+  // define actual Parser objects, starting with basics or building blocks and eventually getting higher-level ones.
+  val tagIntValue = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
   val tagStringValue = P(CharIn(' ' to '~')).rep(1).! // printable character (Ascii 32 to 126).
-  val tagId = intNumber
-  val SOHAsString = 1.toChar.toString // the FIX tag separator as String
-
   // requires lookahead for tag separator
   val tagCharValue = AnyChar.!.map(x => PChar(x.charAt(0))) ~ (End | & (SOHAsString))
-
   val tagBooleanValue = P("Y" | "N").!.map(s => PBoolean(s == "Y"))
-  val tagIntValue = intNumber
   val tagSep = P(SOHAsString)
 
   case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TagInfo {
