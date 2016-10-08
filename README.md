@@ -8,7 +8,7 @@ FastParse is advertised to be nearly as fast as the fastest generic JVM parser o
 I am interested in application messages for the 4.2 variant of FIX protocol, which has been extensively used for trading North American equities for the past
  15 years. There are 5 main application messages identified by `msgType` as `D` (New Order Single), `F` (Cancel Request), `G` (Cancel Replace Request), `8` 
  (Execution Report), and `9` (Order Cancel Reject). For a decent number of equities applications, those 5 application messages in addition to Session layer 
- suffice. Less common but required FIX Messages `j` and `3` would also be interesting.
+ suffice. Less common but required FIX Messages `j` (Business Message Reject) and `3` (Reject) would also be interesting.
 
 What I capture here is:
 - distinguishing 5 application messages (`D`, `F`, `G`, `8`, and `9`)

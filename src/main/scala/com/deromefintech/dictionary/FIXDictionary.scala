@@ -2,7 +2,6 @@ package com.deromefintech.dictionary
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fastparse.all._
-
 // FastParse claims to be faster than most generic JSON parsers,
 // however Play is more established in the broader Scala community and parsing JSON is a specialized task
 // that may warrant a library with a hand parser.
@@ -10,13 +9,22 @@ import fastparse.all._
 // In any event the Play parsing occurs on start up when initializing data FIXDictionary from external file resources
 // and not continuously for client use.
 import play.api.libs.functional.syntax._
-import play.api.libs.json.Reads._
-import play.api.libs.json._
+import play.api.libs.json.{JsPath, Reads, JsValue, Json}
 
 /**
   * Created by philippederome on 2016-09-05.
   */
-object FIXDictionary extends UtilTypes {
+object FIXDictionary extends UtilTypes with PlayJSReads {
+  // Some Reads that can be used for getElements usage
+  val configTagReads: Reads[MetaData] = (
+    (JsPath \ "id").read[Int] and
+      (JsPath \ "name").read[String] and
+      (JsPath \ "type").read[String]
+    )(MetaData.apply _)
+  // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
+  // (requires a TagIdWrapper here)
+  val tagIdReads = (JsPath \ "id").read[Int].map(TagIdWrapper)
+
   val MSG_TYPE_ID = 35
   val TAG_VALUE_SEP = "="
   val SOH = 1.toChar // the FIX tag separator
@@ -75,36 +83,6 @@ object FIXDictionary extends UtilTypes {
     block.map(_.map { y: TagInfo => (y.id, y) }.toMap)
   }
 
-  // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
-  implicit val myTypeRead = (JsPath \ "id").read[Int].map(TagIdWrapper)
-  def getBasicTags(obj: JsValue, path: String): Seq[TagIdWrapper] = {
-    val tagIds = scala.collection.mutable.ArrayBuffer[TagIdWrapper]()
-    val status = (obj \ path).validate[List[TagIdWrapper]] match {
-      case s: JsSuccess[List[TagIdWrapper]] =>
-        s.get.foreach(x => tagIds.append(x))
-      case e: JsError =>
-        println(s"failure parsing list of tags $e of type for $path")
-    }
-    tagIds
-  }
-
-  implicit val configTagReads: Reads[MetaData] = (
-    (JsPath \ "id").read[Int] and
-      (JsPath \ "name").read[String] and
-        (JsPath \ "type").read[String]
-    )(MetaData.apply _)
-
-  def getMetaDatas(obj: JsValue, path: String): Seq[MetaData] = {
-    val metas = scala.collection.mutable.ArrayBuffer[MetaData]()
-    val status = (obj \ path).validate[List[MetaData]] match {
-      case s: JsSuccess[List[MetaData]] =>
-        s.get.foreach(x => metas.append(x))
-      case e: JsError =>
-        println(s"failure parsing list of tags $e of type for $path")
-    }
-    metas
-  }
-
   /**
     *
     * @param infos a collection of tagInfos we want to obtain a parser when any but not more of the constituents are valid
@@ -140,6 +118,9 @@ object FIXDictionary extends UtilTypes {
     } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
 
   def buildTagInfosFromConfig(conf: Config, key: String): TagInfos = {
+    def getMetaDatas(obj: JsValue, path: String): Seq[MetaData] =
+      getElements(obj, path)(configTagReads)
+
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
     getMetaDatas(obj, "tags").map{x: MetaData =>
@@ -185,10 +166,13 @@ object FIXDictionary extends UtilTypes {
     */
   def buildPMsgFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
                           bodyTags: TagIdToTagInfo): PMessage = {
+    def getTagIds(obj: JsValue, path: String): Seq[TagIdWrapper] =
+      getElements(obj, path)(tagIdReads)
+
     val configTags = conf.getString(key)
     val jsObj = Json.parse(configTags)
     val msgTypeIDTagName = (jsObj \ "msgType").asOpt[String] // don't try to consume exact value yet, be happy to capture an Option.
-    val msgBodyTagIds = getBasicTags(jsObj, "tags").flatMap(t => bodyTags.get(t.id))
+    val msgBodyTagIds = getTagIds(jsObj, "tags").flatMap(t => bodyTags.get(t.id))
     buildPMsg(controlTags, msgTypeIDTagName, msgBodyTagIds).fold[PMessage](Fail)(identity) // note the default to Fail on None Option.
   }
 
