@@ -48,15 +48,13 @@ object FIXDictionary extends PlayJSReads {
   val tagBooleanValue = P("Y" | "N").!.map(s => PBoolean(s == "Y"))
   val tagSep = P(SOHAsString)
 
-  def buildBlock(tag: PTagInfo, atEnd: Boolean = false): PTagIdToTagInfo = {
-    val tagTail = P(tagSep ~ tag).rep
-    val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
-    val block = rawBlock.map {
-      case (x: TagInfo, y: TagInfos) => y :+ x
-    }
-    block.map(_.map { y: TagInfo => (y.id, y) }.toMap)
-  }
+  // Move up a bit in abstraction...
+  // Examples, we can recognize 35=D with input value=D or 35=F with input value=F (metadata  string MsgType is not essential for processing
+  // but could turn out to be useful for consumer of the parser)
+  def buildPMsgTypeID(value: String) =
+    P( (MSG_TYPE_ID + TAG_VALUE_SEP) ~ value).!.map(x => StringFIXTag(MSG_TYPE_ID, "MsgType").setValue(value))
 
+  // Move further up a bit in abstraction...
   /**
     *
     * @param infos a collection of tagInfos we want to obtain a parser when any but not more of the constituents are valid
@@ -66,30 +64,10 @@ object FIXDictionary extends PlayJSReads {
     *         of these 3 tags but no other, which is done combining them in fold as P(accum | next).
     */
   def parseTagInfos(infos: TagInfos, getParser: TagInfo => PTagInfo): Option[PTagInfo] =
-    infos.map(getParser) match {
-      case x if x.isEmpty => None
-      case z => Some(z.foldLeft[PTagInfo](z.head)((accum, next) => P(accum | next)))
-    }
-
-  // Examples, we can recognize 35=D with input value=D or 35=F with input value=F (metadata  string MsgType is not essential for processing
-  // but could turn out to be useful for consumer of the parser)
-  def buildPMsgTypeID(value: String) =
-    P( (MSG_TYPE_ID + TAG_VALUE_SEP) ~ value).!.map(x => StringFIXTag(MSG_TYPE_ID, "MsgType").setValue(value))
-
-  // actually builds a Parser for a FIX Message of the given msgTypeIDTagName with help of info for controlPair and tagIds
-  def buildPMsg(controlPair: ControlTagsParserPair,
-                    msgTypeIDTagName: Option[String],
-                    tagIds: TagInfos): Option[PMessage] =
-    // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
-    // when building the map of tags.
-    for {reconciledTags <- parseTagInfos(tagIds, TagInfo.parseBuilder) // tag Parsers, get reconciled tags from their keys tagIds
-         msgTypeID <- msgTypeIDTagName.map(buildPMsgTypeID)
-         headerMap = buildBlock(P(controlPair.headerTags | msgTypeID))
-         // this will need to be fixed since msgTypeID should be viewed as a predecessor of headerTags as it's mandatory for it by FIX
-         // to be the first tag of headerTags. We may as well make a semantic translation and interpret that as saying msgType is not
-         // a header but precedes the header.
-         msgBodyAsMap = buildBlock(reconciledTags)
-    } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
+  infos.map(getParser) match {
+    case x if x.isEmpty => None
+    case x => Some(x.foldLeft[PTagInfo](x.head)((accum, next) => P(accum | next)))
+  }
 
   def buildTagInfosFromConfig(conf: Config, key: String): TagInfos = {
     def getMetaDatas(obj: JsValue, path: String): Seq[MetaData] =
@@ -122,8 +100,38 @@ object FIXDictionary extends PlayJSReads {
     */
   def getControlTags(conf: Config): ControlTagsParserPair =
     ControlTagsParserPair(buildPTagInfoFromConfig(conf, "headerTags"),
-      Some(buildPTagInfoFromConfig(conf, "trailerTags")).fold[PTagIdToTagInfo](Fail)(t => buildBlock(t, atEnd = true)))
+      Some(buildPTagInfoFromConfig(conf, "trailerTags")).fold[PTagIdToTagInfo](Fail)(t => buildMapForBlock(t, atEnd = true)))
 
+  // Build from a block of tags a parser that can construct a map of tagId to TagInfo, which is what a client would need
+  // This has use for the header, body, and trailer of a FIX message for which independent, separate collections of tags is desirable
+  // so that FIX session management can be handled independently from FIX message business logic.
+  // given 55=YHOO|54=B|40=P in a body block you get a map (55-> TagInfoFor(YHOO), 54-> TagInfoFor(B), 40-> TagInfoFor(P)), loosely speaking
+  def buildMapForBlock(tag: PTagInfo, atEnd: Boolean = false): PTagIdToTagInfo = {
+    val tagTail = P(tagSep ~ tag).rep
+    val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
+    val block = rawBlock.map {
+      case (x: TagInfo, y: TagInfos) => y :+ x
+    }
+    block.map(_.map { y: TagInfo => (y.id, y) }.toMap)
+  }
+
+  // actually builds a Parser for a FIX Message of the given msgTypeIDTagName with help of info for controlPair and tagIds
+  def buildPMsg(controlPair: ControlTagsParserPair,
+                    msgTypeIDTagName: Option[String],
+                    tagIds: TagInfos): Option[PMessage] =
+    // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
+    // when building the map of tags.
+    for {reconciledTags <- parseTagInfos(tagIds, TagInfo.parseBuilder) // tag Parsers, get reconciled tags from their keys tagIds
+         msgTypeID <- msgTypeIDTagName.map(buildPMsgTypeID)
+         headerMap = buildMapForBlock(P(controlPair.headerTags | msgTypeID))
+         // this will need to be fixed since msgTypeID should be viewed as a predecessor of headerTags as it's mandatory for it by FIX
+         // to be the first tag of headerTags. We may as well make a semantic translation and interpret that as saying msgType is not
+         // a header but precedes the header.
+         msgBodyAsMap = buildMapForBlock(reconciledTags)
+    } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
+
+  // actually builds a Parser for a FIX Message whose body tags can be obtained from key via configuration
+  // with help of controlTags that are constant for any FIX Message of the same FIX Version
   /**
     *
     * @param conf instance of Config
