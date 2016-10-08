@@ -48,39 +48,6 @@ object FIXDictionary extends PlayJSReads {
   val tagBooleanValue = P("Y" | "N").!.map(s => PBoolean(s == "Y"))
   val tagSep = P(SOHAsString)
 
-  case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TagInfo {
-    override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))
-    def setValue(s: String) = this.copy(value = PString(s))
-  }
-
-  case class CharFIXTag(id: Int, name: String, value: PChar = PChar(Char.MinValue)) extends TagInfo {
-    override val tagParser: Parser[PChar] = tagCharValue
-    def setValue(s: String) = this.copy(value = PChar(s.charAt(0)))
-  }
-
-  case class IntFIXTag(id: Int, name: String, value: PInt = PInt(0)) extends TagInfo {
-    override val tagParser: Parser[PInt] = tagIntValue
-    def setValue(s: String) = this.copy(value = PInt(s.toInt))
-  }
-
-  case class BooleanFIXTag(id: Int, name: String, value: PBoolean = PBoolean(false)) extends TagInfo {
-    override val tagParser: Parser[PBoolean] = tagBooleanValue
-    def setValue(s: String) = this.copy(value = PBoolean(s == "Y"))
-  }
-
-  def buildHeader(tag: PTagInfo, atEnd: Boolean = false) = {
-    val tagTail = P(tagSep ~ tag).rep
-    val rawBlock =
-      if (atEnd) P(tag ~ tagTail ~ End)
-      else P(tag ~ tagTail)
-
-    val block = rawBlock.map {
-      case (x: TagInfo, y: TagInfos) => y :+ x
-    }
-    block.map(
-      x => x.map { y: TagInfo => (y.id, y) }.toMap)
-  }
-
   def buildBlock(tag: PTagInfo, atEnd: Boolean = false): PTagIdToTagInfo = {
     val tagTail = P(tagSep ~ tag).rep
     val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
@@ -117,7 +84,7 @@ object FIXDictionary extends PlayJSReads {
     // when building the map of tags.
     for {reconciledTags <- parseTagInfos(tagIds, TagInfo.parseBuilder) // tag Parsers, get reconciled tags from their keys tagIds
          msgTypeID <- msgTypeIDTagName.map(buildPMsgTypeID)
-         headerMap = buildHeader(P(controlPair.headerTags | msgTypeID))
+         headerMap = buildBlock(P(controlPair.headerTags | msgTypeID))
          // this will need to be fixed since msgTypeID should be viewed as a predecessor of headerTags as it's mandatory for it by FIX
          // to be the first tag of headerTags. We may as well make a semantic translation and interpret that as saying msgType is not
          // a header but precedes the header.
@@ -196,4 +163,25 @@ object FIXDictionary extends PlayJSReads {
   val FIXMsg9P = buildPMsgFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
   // Execution Report
   val FIXMsg8P = buildPMsgFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
+
+  case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TagInfo {
+    override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))
+    def setValue(s: String) = this.copy(value = PString(s))
+  }
+
+  case class CharFIXTag(id: Int, name: String, value: PChar = PChar(Char.MinValue)) extends TagInfo {
+    override val tagParser: Parser[PChar] = tagCharValue
+    def setValue(s: String) = this.copy(value = PChar(s.charAt(0)))
+  }
+
+  case class IntFIXTag(id: Int, name: String, value: PInt = PInt(0)) extends TagInfo {
+    override val tagParser: Parser[PInt] = tagIntValue
+    def setValue(s: String) = this.copy(value = PInt(s.toInt))
+  }
+
+  case class BooleanFIXTag(id: Int, name: String, value: PBoolean = PBoolean(false)) extends TagInfo {
+    override val tagParser: Parser[PBoolean] = tagBooleanValue
+    def setValue(s: String) = this.copy(value = PBoolean(s == "Y"))
+  }
+
 }
