@@ -10,11 +10,12 @@ class FIXDictionaryTest extends UnitTest {
 
   def checkResult[T](P: Parsed[T], index: Int, isSuccess: Boolean) = {
     P.index should equal(index)
+    // matched parameters below are not used, they serve a documentation purpose of what Success and Failure look like
     if (isSuccess) {
-      val Parsed.Success(_, idxP) = P
+      val Parsed.Success(parsed, idxP) = P
     }
     else {
-      val Parsed.Failure(_, idxF, _) = P
+      val Parsed.Failure(lastParser, idxF, extra) = P
     }
   }
 

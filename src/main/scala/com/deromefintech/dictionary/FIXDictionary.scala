@@ -3,8 +3,9 @@ package com.deromefintech.dictionary
 import com.typesafe.config.{Config, ConfigFactory}
 import fastparse.all._
 
-// FastParse claims to be faster than most and hence Play's JSON parser,
-// however Play is more established in the broader Scala community.
+// FastParse claims to be faster than most generic JSON parsers,
+// however Play is more established in the broader Scala community and parsing JSON is a specialized task
+// that may warrant a library with a hand parser.
 // Hence we use Play here in place of FastParse (or Typelevel's Circe) for JSON parsing.
 // In any event the Play parsing occurs on start up when initializing data FIXDictionary from external file resources
 // and not continuously for client use.
@@ -16,11 +17,15 @@ import play.api.libs.json._
   * Created by philippederome on 2016-09-05.
   */
 object FIXDictionary extends UtilTypes {
+  val MSG_TYPE_ID = 35
+  val TAG_VALUE_SEP = "="
+  val SOH = 1.toChar // the FIX tag separator
+
   val intNumber = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
   val tagStringValue = P(CharIn(' ' to '~')).rep(1).! // printable character (Ascii 32 to 126).
   val tagId = intNumber
-  val SOH = 1.toChar // the FIX tag separator
-  val SOHAsString = 1.toChar.toString // the FIX tag separator
+  val SOHAsString = 1.toChar.toString // the FIX tag separator as String
+
   // requires lookahead for tag separator
   val tagCharValue = AnyChar.!.map(x => PChar(x.charAt(0))) ~ (End | & (SOHAsString))
 
@@ -28,106 +33,116 @@ object FIXDictionary extends UtilTypes {
   val tagIntValue = intNumber
   val tagSep = P(SOHAsString)
 
-  case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TypedFIXTag {
+  case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TagInfo {
     override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))
     def setValue(s: String) = this.copy(value = PString(s))
   }
 
-  case class CharFIXTag(id: Int, name: String, value: PChar = PChar(Char.MinValue)) extends TypedFIXTag {
+  case class CharFIXTag(id: Int, name: String, value: PChar = PChar(Char.MinValue)) extends TagInfo {
     override val tagParser: Parser[PChar] = tagCharValue
     def setValue(s: String) = this.copy(value = PChar(s.charAt(0)))
   }
 
-  case class IntFIXTag(id: Int, name: String, value: PInt = PInt(0)) extends TypedFIXTag {
+  case class IntFIXTag(id: Int, name: String, value: PInt = PInt(0)) extends TagInfo {
     override val tagParser: Parser[PInt] = tagIntValue
     def setValue(s: String) = this.copy(value = PInt(s.toInt))
   }
 
-  case class BooleanFIXTag(id: Int, name: String, value: PBoolean = PBoolean(false)) extends TypedFIXTag {
+  case class BooleanFIXTag(id: Int, name: String, value: PBoolean = PBoolean(false)) extends TagInfo {
     override val tagParser: Parser[PBoolean] = tagBooleanValue
     def setValue(s: String) = this.copy(value = PBoolean(s == "Y"))
   }
 
-  def buildHeaderBlock(tag: PTypedFixTag, atEnd: Boolean = false) = {
+  def buildHeader(tag: PTagInfo, atEnd: Boolean = false) = {
     val tagTail = P(tagSep ~ tag).rep
     val rawBlock =
       if (atEnd) P(tag ~ tagTail ~ End)
       else P(tag ~ tagTail)
 
     val block = rawBlock.map {
-      case (x: TypedFIXTag, y: TypedFIXTagValues) => y :+ x
+      case (x: TagInfo, y: TagInfos) => y :+ x
     }
     block.map(
-      x => x.map { y: TypedFIXTag => (y.id, y) }.toMap)
+      x => x.map { y: TagInfo => (y.id, y) }.toMap)
   }
 
-  def buildBlock(tag: PTypedFixTag, atEnd: Boolean = false): PMapTypedFixTag = {
+  def buildBlock(tag: PTagInfo, atEnd: Boolean = false): PTagIdToTagInfo = {
     val tagTail = P(tagSep ~ tag).rep
     val rawBlock = if (atEnd) P(tag ~ tagTail ~ End) else P(tag ~ tagTail)
     val block = rawBlock.map {
-      case (x: TypedFIXTag, y: TypedFIXTagValues) => y :+ x
+      case (x: TagInfo, y: TagInfos) => y :+ x
     }
-    block.map(_.map { y: TypedFIXTag => (y.id, y) }.toMap)
+    block.map(_.map { y: TagInfo => (y.id, y) }.toMap)
   }
 
-  case class BasicConfigTagInfo(id: Int)
   // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
-  implicit val myTypeRead = (JsPath \ "id").read[Int].map(BasicConfigTagInfo)
-  def getBasicTags(obj: JsValue, path: String): Seq[BasicConfigTagInfo] = {
-    val myTags = scala.collection.mutable.ArrayBuffer[BasicConfigTagInfo]()
-    val status = (obj \ path).validate[List[BasicConfigTagInfo]] match {
-      case s: JsSuccess[List[BasicConfigTagInfo]] =>
-        s.get.foreach(x => myTags.append(x))
+  implicit val myTypeRead = (JsPath \ "id").read[Int].map(TagIdWrapper)
+  def getBasicTags(obj: JsValue, path: String): Seq[TagIdWrapper] = {
+    val tagIds = scala.collection.mutable.ArrayBuffer[TagIdWrapper]()
+    val status = (obj \ path).validate[List[TagIdWrapper]] match {
+      case s: JsSuccess[List[TagIdWrapper]] =>
+        s.get.foreach(x => tagIds.append(x))
       case e: JsError =>
         println(s"failure parsing list of tags $e of type for $path")
     }
-    myTags
+    tagIds
   }
 
-  case class ConfigTagInfo(id: Int, name: String, `type`: String)
-  implicit val configTagReads: Reads[ConfigTagInfo] = (
+  implicit val configTagReads: Reads[MetaData] = (
     (JsPath \ "id").read[Int] and
       (JsPath \ "name").read[String] and
         (JsPath \ "type").read[String]
-    )(ConfigTagInfo.apply _)
+    )(MetaData.apply _)
 
-  def getTags(obj: JsValue, path: String): Seq[ConfigTagInfo] = {
-    val myTags = scala.collection.mutable.ArrayBuffer[ConfigTagInfo]()
-    val status = (obj \ path).validate[List[ConfigTagInfo]] match {
-      case s: JsSuccess[List[ConfigTagInfo]] =>
-        s.get.foreach(x => myTags.append(x))
+  def getMetaDatas(obj: JsValue, path: String): Seq[MetaData] = {
+    val metas = scala.collection.mutable.ArrayBuffer[MetaData]()
+    val status = (obj \ path).validate[List[MetaData]] match {
+      case s: JsSuccess[List[MetaData]] =>
+        s.get.foreach(x => metas.append(x))
       case e: JsError =>
         println(s"failure parsing list of tags $e of type for $path")
     }
-    myTags
+    metas
   }
 
-  def parseOfSeq(seq: TypedFIXTagValues, f: TypedFIXTag => PTypedFixTag): Option[PTypedFixTag] = {
-    val pSeq: Seq[PTypedFixTag] = seq.map(x => f(x))
-    pSeq match {
+  /**
+    *
+    * @param infos a collection of tagInfos we want to obtain a parser when any but not more of the constituents are valid
+    * @param getParser a function that obtains a parser PTagInfo that can parse TagInfo given a TagInfo, one that can recognize the given TagInfo.
+    * @return on success a Some, failure a None out of many tags we can parse, we can parse the whole collection as one unit
+    *         meaning any constituent may appear (if infos contain tags 35, 40, 54, result will be able to recognize any
+    *         of these 3 tags but no other, which is done combining them in fold as P(accum | next).
+    */
+  def parseTagInfos(infos: TagInfos, getParser: TagInfo => PTagInfo): Option[PTagInfo] =
+    infos.map(getParser) match {
       case x if x.isEmpty => None
-      case z => Some(z.fold[PTypedFixTag](z.head)((y, x) => P(y | x)))
+      case z => Some(z.foldLeft[PTagInfo](z.head)((accum, next) => P(accum | next)))
     }
-  }
 
-  def buildMsgTypeIDTag(value: String) =
-    P("35=" ~ value).!.map(x => StringFIXTag(35, "MsgType").setValue(value))
+  // Examples, we can recognize 35=D with input value=D or 35=F with input value=F (metadata  string MsgType is not essential for processing
+  // but could turn out to be useful for consumer of the parser)
+  def buildPMsgTypeID(value: String) =
+    P( (MSG_TYPE_ID + TAG_VALUE_SEP) ~ value).!.map(x => StringFIXTag(MSG_TYPE_ID, "MsgType").setValue(value))
 
-  def buildFullMsgP(controlPair: ControlTagsParserPair,
+  // actually builds a Parser for a FIX Message of the given msgTypeIDTagName with help of info for controlPair and tagIds
+  def buildPMsg(controlPair: ControlTagsParserPair,
                     msgTypeIDTagName: Option[String],
-                    tags: TypedFIXTagValues) =
+                    tagIds: TagInfos): Option[PMessage] =
     // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
     // when building the map of tags.
-    for {x <- parseOfSeq(tags, TypedFIXTag.parseBuilder) // tag Parsers
-         msgTypeID <- msgTypeIDTagName.map(buildMsgTypeIDTag)
-         headerMap = buildHeaderBlock(P(controlPair.headerTags | msgTypeID))
-         msgBodyAsMap = buildBlock(x)
+    for {reconciledTags <- parseTagInfos(tagIds, TagInfo.parseBuilder) // tag Parsers, get reconciled tags from their keys tagIds
+         msgTypeID <- msgTypeIDTagName.map(buildPMsgTypeID)
+         headerMap = buildHeader(P(controlPair.headerTags | msgTypeID))
+         // this will need to be fixed since msgTypeID should be viewed as a predecessor of headerTags as it's mandatory for it by FIX
+         // to be the first tag of headerTags. We may as well make a semantic translation and interpret that as saying msgType is not
+         // a header but precedes the header.
+         msgBodyAsMap = buildBlock(reconciledTags)
     } yield P(headerMap ~ tagSep ~ msgBodyAsMap ~ tagSep ~ controlPair.trailerMap)
 
-  def buildTagsFromConfig(conf: Config, key: String): TypedFIXTagValues = {
+  def buildTagInfosFromConfig(conf: Config, key: String): TagInfos = {
     val configTags = conf.getString(key)
     val obj = Json.parse(configTags)
-    getTags(obj, "tags").map{x: ConfigTagInfo =>
+    getMetaDatas(obj, "tags").map{x: MetaData =>
       x.`type` match {
         case "Boolean" => BooleanFIXTag(x.id, x.name)
         case "Int" => IntFIXTag(x.id, x.name)
@@ -137,37 +152,57 @@ object FIXDictionary extends UtilTypes {
     }
   }
 
-  def buildPTagsPFromConfig(conf: Config, key: String) = {
-    val allTags = buildTagsFromConfig(conf, key)
-    parseOfSeq(allTags, TypedFIXTag.parseBuilder).fold[PTypedFixTag](Fail)(identity)
+  // meant to be used for a distinct block of tags within a FIX message, e.g headerTags or trailerTags.
+  def buildPTagInfoFromConfig(conf: Config, key: String): PTagInfo = {
+    val tags = buildTagInfosFromConfig(conf, key)
+    parseTagInfos(tags, TagInfo.parseBuilder).fold[PTagInfo](Fail)(identity)
   }
 
-  case class ControlTagsParserPair(headerTags: PTypedFixTag, trailerMap: PMapTypedFixTag)
-  val controlTagsParserPairFail = ControlTagsParserPair(Fail, Fail)
+  /**
+    *
+    * @param conf a Config object allowing us to read config data from resource files, which we need to identify header and trailer tags
+    * @return
+    * we parse control tags (headerTags and trailerTags) separately from bodyTags because they are constant for each FIX MsgType (D,F,G,8,9)
+    * whereas bodyTags depend on MsgType.
+    */
   def getControlTags(conf: Config): ControlTagsParserPair =
-    ControlTagsParserPair(buildPTagsPFromConfig(conf, "headerTags"),
-      Some(buildPTagsPFromConfig(conf, "trailerTags")).fold[PMapTypedFixTag](Fail)(t => buildBlock(t, atEnd = true)))
+    ControlTagsParserPair(buildPTagInfoFromConfig(conf, "headerTags"),
+      Some(buildPTagInfoFromConfig(conf, "trailerTags")).fold[PTagIdToTagInfo](Fail)(t => buildBlock(t, atEnd = true)))
 
-  def buildMsgPFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
-                          bodyTags: Map[Int, TypedFIXTag]): PFullMessage = {
+  /**
+    *
+    * @param conf instance of Config
+    * @param key a key for config so we can identify the tags of a msgType that is 1-1 with the key
+    * @param controlTags a pair of header tag info and trailer tag info with trailer info already arranged as a map of TagId to meta data
+    * @param bodyTags the map from tagId to the meta data (with default value to be reevaluated) for that tag
+    * @return A PMessage, which consists of headerTags, bodyTags, and trailerTags
+    * Here we load from resource files which tags belong to each of the 3 sets/sequences
+    * of headerTags, bodyTags, and trailerTags, headerTags and trailerTags having been pre-loaded within controlTags.
+    * In general, this parsing is actually FIX Version dependent (to be done later), because the contents of the valid tags
+    * for these 3 tags depend on FIX Version and msgId (key).
+    * So, eventually, there should be a design for each FIX Version to build a set of PMessage parsers
+    * for all valid MsgId within that FIX Version.
+    */
+  def buildPMsgFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
+                          bodyTags: TagIdToTagInfo): PMessage = {
     val configTags = conf.getString(key)
-    val obj = Json.parse(configTags)
-    val msgTypeIDTagName = (obj \ "msgType").asOpt[String]
-    val msgBodyTags = getBasicTags(obj, "tags").flatMap(t => bodyTags.get(t.id))
-    buildFullMsgP(controlTags, msgTypeIDTagName, msgBodyTags).fold[PFullMessage](Fail)(identity)
+    val jsObj = Json.parse(configTags)
+    val msgTypeIDTagName = (jsObj \ "msgType").asOpt[String] // don't try to consume exact value yet, be happy to capture an Option.
+    val msgBodyTagIds = getBasicTags(jsObj, "tags").flatMap(t => bodyTags.get(t.id))
+    buildPMsg(controlTags, msgTypeIDTagName, msgBodyTagIds).fold[PMessage](Fail)(identity) // note the default to Fail on None Option.
   }
 
   val conf = ConfigFactory.load()
   val controlTags = getControlTags(conf)
-  val bodyTags = buildTagsFromConfig(conf, "bodyTags").map(t => (t.id, t)).toMap
+  val bodyTags = buildTagInfosFromConfig(conf, "bodyTags").map(t => (t.id, t)).toMap
   // New Order Single
-  val fullMsgTypeDAsMap = buildMsgPFromConfig(conf, "NewOrderTags", controlTags, bodyTags)
+  val fullMsgTypeDAsMap = buildPMsgFromConfig(conf, "NewOrderTags", controlTags, bodyTags)
   // Cancel Request
-  val fullMsgTypeFAsMap = buildMsgPFromConfig(conf, "CancelRequestTags", controlTags, bodyTags)
+  val fullMsgTypeFAsMap = buildPMsgFromConfig(conf, "CancelRequestTags", controlTags, bodyTags)
   // Cancel Replace Request
-  val fullMsgTypeGAsMap = buildMsgPFromConfig(conf, "CancelReplaceTags", controlTags, bodyTags)
+  val fullMsgTypeGAsMap = buildPMsgFromConfig(conf, "CancelReplaceTags", controlTags, bodyTags)
   // Order Cancel Reject
-  val fullMsgType9AsMap = buildMsgPFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
+  val fullMsgType9AsMap = buildPMsgFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
   // Execution Report
-  val fullMsgType8AsMap = buildMsgPFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
+  val fullMsgType8AsMap = buildPMsgFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
 }

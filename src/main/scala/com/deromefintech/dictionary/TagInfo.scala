@@ -5,15 +5,19 @@ import fastparse.all._
 /**
   * Created by philippederome on 2016-10-01.
   */
-trait TypedFIXTag {
+trait BasicMetaData {
   val id: Int
   val name: String
-  val tagParser: Parser[PValue]
-  def setValue(s: String): TypedFIXTag
 }
 
-object TypedFIXTag extends UtilTypes {
-  def parseBuilder(t: TypedFIXTag): PTypedFixTag =
+trait TagInfo extends BasicMetaData {
+  val value: PValue
+  val tagParser: Parser[PValue]
+  def setValue(s: String): TagInfo
+}
+
+object TagInfo extends UtilTypes {
+  def parseBuilder(t: TagInfo): PTagInfo =
     P(s"${t.id}=" ~ t.tagParser).!.map { s: String =>
       t.setValue(s)
     }
