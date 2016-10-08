@@ -196,13 +196,13 @@ object FIXDictionary extends UtilTypes {
   val controlTags = getControlTags(conf)
   val bodyTags = buildTagInfosFromConfig(conf, "bodyTags").map(t => (t.id, t)).toMap
   // New Order Single
-  val fullMsgTypeDAsMap = buildPMsgFromConfig(conf, "NewOrderTags", controlTags, bodyTags)
+  val FIXMsgDP = buildPMsgFromConfig(conf, "NewOrderTags", controlTags, bodyTags)
   // Cancel Request
-  val fullMsgTypeFAsMap = buildPMsgFromConfig(conf, "CancelRequestTags", controlTags, bodyTags)
+  val FIXMsgFP = buildPMsgFromConfig(conf, "CancelRequestTags", controlTags, bodyTags)
   // Cancel Replace Request
-  val fullMsgTypeGAsMap = buildPMsgFromConfig(conf, "CancelReplaceTags", controlTags, bodyTags)
+  val FIXMsgGP = buildPMsgFromConfig(conf, "CancelReplaceTags", controlTags, bodyTags)
   // Order Cancel Reject
-  val fullMsgType9AsMap = buildPMsgFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
+  val FIXMsg9P = buildPMsgFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
   // Execution Report
-  val fullMsgType8AsMap = buildPMsgFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
+  val FIXMsg8P = buildPMsgFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
 }

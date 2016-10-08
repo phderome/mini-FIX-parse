@@ -15,7 +15,7 @@ What I capture here is:
 - distinguishing header, body, and trailer (without accounting for payload or message length)
 - identifying some of the tags on the 5 messages.
 - Tags are external to code, thanks to Play's JSON but could also use FastParse for JSON parsing.
-- four distinct data types: `Int`, `Char`, `String`, and `Boolean`.
+- Four distinct data types: `Int`, `Char`, `String`, and `Boolean` (more are required, notably timestamps).
 
 Unit tests are meant to demonstrate some of the above features of the mini-parser.
 
@@ -25,6 +25,6 @@ Obvious limitations for those familiar with FIX (**this is a toy after all**):
 working at a second phase
 - lots of FIX tags are not specified
 - multiple versions of FIX protocol should be handled
-- Administrative messages are not supported but are essential (Logon, Logout, retransmission requests, etc...). This could be viewed as a FIX engine feature 
-rather than a parser
+- Administrative messages are not supported but are essential (Logon, Logout, retransmission requests, etc...). This should be viewed as a FIX engine feature 
+rather than a parser as we would now be dealing with protocol logic
 
