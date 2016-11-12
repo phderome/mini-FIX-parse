@@ -24,7 +24,6 @@ libraryDependencies ++= {
     "org.scala-lang"    % "scala-reflect"       % scalaVersion.value,
     "org.typelevel" %% "cats" % "0.6.1",
     "com.lihaoyi" %% "fastparse" % "0.3.7",
-    "com.lihaoyi" %% "ammonite-ops" % "0.7.6",
     "com.typesafe" % "config" % "1.3.0",
     "com.typesafe.play" % "play-json_2.11" % "2.5.4",
     "org.scalatest"     %% "scalatest"      % "2.2.6"            % Test,
