@@ -11,8 +11,6 @@ import scala.util.{Left, Right}
 // however Circe (along with Argonaut) is more established in the broader Scala community and parsing JSON is a specialized task
 // that may warrant a library with a hand parser.
 // Hence we use Circe for JSON parsing.
-// In any event this parsing occurs on start up when initializing data FIXDictionary from external file resources
-// and not continuously for client use.
 
 trait ConfigJson {
   def getMetaDatas(document: String, tagGroup: String): Seq[MetaData] = {
