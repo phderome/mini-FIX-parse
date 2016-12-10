@@ -1,21 +1,12 @@
 package com.deromefintech.dictionary
 
 import com.deromefintech.dictionary.TagInfo.PTagInfo
-import com.typesafe.config.{Config, ConfigFactory}
 import fastparse.all._
-// FastParse claims to be faster than most generic JSON parsers,
-// however Play is more established in the broader Scala community and parsing JSON is a specialized task
-// that may warrant a library with a hand parser.
-// Hence we use Play here in place of FastParse (or Typelevel's Circe) for JSON parsing.
-// In any event the Play parsing occurs on start up when initializing data FIXDictionary from external file resources
-// and not continuously for client use.
-import play.api.libs.functional.syntax._
-import play.api.libs.json.{JsPath, Reads, JsValue, Json}
 
 /**
   * Created by philippederome on 2016-09-05.
   */
-object FIXDictionary extends PlayJSReads {
+object FIXDictionary extends ConfigJson {
   type TagInfos = Seq[TagInfo]
   type TagId = Int
   type TagIdToMetaData = Map[TagId, BasicMetaData]
@@ -26,19 +17,96 @@ object FIXDictionary extends PlayJSReads {
   case class MetaData(id: Int, name: String, `type`: String) extends BasicMetaData
   case class ControlTagsParserPair(headerTags: PTagInfo, trailerMap: PTagIdToTagInfo)
 
+
+  // HACK: types are overly simplified, SendingTime is not a String. Should be back in config file not in code.
+  val  confHeaderTags = """{
+   "tags":[
+   {"id":8, "name":"BeginString", "type":"String"},
+   {"id":9, "name": "BodyLength", "type":"Int"},
+   {"id":34, "name":"MsgSeqNum", "type": "Int"},
+   {"id":35, "name": "MsgType", "type":"String"},
+   {"id":43, "name":"possDupe", "type":"Boolean"},
+   {"id":49, "name":"SenderCompID", "type":"String"},
+   {"id":52, "name":"SendingTime", "type":"String"},
+   {"id":56, "name":"TargetCompID", "type":"String"},
+   {"id":97, "name":"PossResend", "type":"Boolean"},
+   {"id":115, "name":"OnBehalfOfCompID", "type":"String"},
+   {"id":128, "name":"DeliverToCompID", "type":"String"}
+   ]
+    }"""
+
+  // HACK: should be Length for 93 and Data for 89
+  val confTrailerTags = """{
+   "tags":[
+     {"id":10, "name": "CheckSum", "type":"String"},
+     {"id":89, "name": "Signature", "type":"String"},
+     {"id":93, "name": "SignatureLength", "type":"String"}
+   ]
+    }"""
+
+  val confBodyTags = """{
+   "tags":[
+   {"id":11, "name": "ClOrdID", "type":"String"},
+   {"id":37, "name": "OrderID", "type":"String"},
+   {"id":40, "name": "OrdType", "type":"Char"},
+   {"id":41, "name": "OrigClOrdID", "type":"String"},
+   {"id":54, "name": "Side", "type":"Char"},
+   {"id":55, "name": "Symbol", "type":"String"}
+   ]
+    }"""
+
+  val confNewOrderTags = """{
+   "msgType":"D",
+   "tags":[
+   {"id":11},
+   {"id":55},
+   {"id":40},
+   {"id":54}
+   ]}"""
+
+  val confCancelRequestTags = """{
+   "msgType":"F",
+   "tags":[
+   {"id":11},
+   {"id":37},
+   {"id":41},
+   {"id":54},
+   {"id":55}
+   ]}"""
+
+  val confCancelReplaceTags = """{
+   "msgType":"G",
+   "tags":[
+   {"id":11},
+   {"id":37},
+   {"id":41},
+   {"id":54},
+   {"id":40},
+   {"id":55}
+   ]}"""
+
+  val confOrderCancelRejectTags = """{
+   "msgType":"9",
+   "tags":[
+   {"id":11},
+   {"id":37},
+   {"id":41}
+   ]}"""
+
+  val confExecutionReportTags = """{
+   "msgType":"8",
+   "tags":[
+   {"id":11},
+   {"id":37},
+   {"id":41},
+   {"id":54},
+   {"id":40},
+   {"id":55}
+   ]}"""
+
   val MSG_TYPE_ID = 35
   val TAG_VALUE_SEP = "="
   val SOHAsString = 1.toChar.toString // the FIX tag separator as String
-
-  // Some Reads that can be used for getElements usage
-  val configTagReads: Reads[MetaData] = (
-    (JsPath \ "id").read[Int] and
-      (JsPath \ "name").read[String] and
-      (JsPath \ "type").read[String]
-    )(MetaData.apply _)
-  // @see https://groups.google.com/forum/?fromgroups=#!starred/play-framework/hGrveOkbJ6U on Reads with single item case classes
-  // (requires a TagIdWrapper here)
-  val tagIdReads = (JsPath \ "id").read[Int].map(TagIdWrapper)
 
   // define actual Parser objects, starting with basics or building blocks and eventually getting higher-level ones.
   val tagIntValue = P(CharIn('0' to '9').rep(1).!.map(s => PInt(s.toInt)))
@@ -69,38 +137,34 @@ object FIXDictionary extends PlayJSReads {
     case x => Some(x.foldLeft[PTagInfo](x.head)((accum, next) => P(accum | next)))
   }
 
-  def buildTagInfosFromConfig(conf: Config, key: String): TagInfos = {
-    def getMetaDatas(obj: JsValue, path: String): Seq[MetaData] =
-      getElements(obj, path)(configTagReads)
-
-    val configTags = conf.getString(key)
-    val obj = Json.parse(configTags)
-    getMetaDatas(obj, "tags").map{x: MetaData =>
-      x.`type` match {
-        case "Boolean" => BooleanFIXTag(x.id, x.name)
-        case "Int" => IntFIXTag(x.id, x.name)
-        case "Char" => CharFIXTag(x.id, x.name)
-        case _ => StringFIXTag(x.id, x.name)
+  def buildTagInfosFromConfig(value: String): TagInfos = {
+    getMetaDatas(value) map { m: MetaData =>
+      m.`type` match {
+        case "Boolean" => BooleanFIXTag(m.id, m.name)
+        case "Int" => IntFIXTag(m.id, m.name)
+        case "Char" => CharFIXTag(m.id, m.name)
+        case _ => StringFIXTag(m.id, m.name)
       }
     }
   }
 
   // meant to be used for a distinct block of tags within a FIX message, e.g headerTags or trailerTags.
-  def buildPTagInfoFromConfig(conf: Config, key: String): PTagInfo = {
-    val tags = buildTagInfosFromConfig(conf, key)
+  def buildPTagInfoFromConfig(value: String): PTagInfo = {
+    val tags = buildTagInfosFromConfig(value)
     parseTagInfos(tags, TagInfo.parseBuilder).fold[PTagInfo](Fail)(identity)
   }
 
   /**
     *
-    * @param conf a Config object allowing us to read config data from resource files, which we need to identify header and trailer tags
+    * @param headerTags String representing header tags
+    * @param trailerTags String representing trailer tags
     * @return
     * we parse control tags (headerTags and trailerTags) separately from bodyTags because they are constant for each FIX MsgType (D,F,G,8,9)
     * whereas bodyTags depend on MsgType.
     */
-  def getControlTags(conf: Config): ControlTagsParserPair =
-    ControlTagsParserPair(buildPTagInfoFromConfig(conf, "headerTags"),
-      Some(buildPTagInfoFromConfig(conf, "trailerTags")).fold[PTagIdToTagInfo](Fail)(t => buildMapForBlock(t, atEnd = true)))
+  def getControlTags(headerTags: String, trailerTags: String): ControlTagsParserPair =
+    ControlTagsParserPair(buildPTagInfoFromConfig(headerTags),
+      Some(buildPTagInfoFromConfig(trailerTags)).fold[PTagIdToTagInfo](Fail)(t => buildMapForBlock(t, atEnd = true)))
 
   // Build from a block of tags a parser that can construct a map of tagId to TagInfo, which is what a client would need
   // This has use for the header, body, and trailer of a FIX message for which independent, separate collections of tags is desirable
@@ -117,12 +181,12 @@ object FIXDictionary extends PlayJSReads {
 
   // actually builds a Parser for a FIX Message of the given msgTypeIDTagName with help of info for controlPair and tagIds
   def buildPMsg(controlPair: ControlTagsParserPair,
-                    msgTypeIDTagName: Option[String],
+                msgTypeValue: Option[String],
                     tagIds: TagInfos): Option[PMessage] =
     // arguable design to leave out msgTypeID(35) from regular headerMap and inject only
     // when building the map of tags.
     for {reconciledTags <- parseTagInfos(tagIds, TagInfo.parseBuilder) // tag Parsers, get reconciled tags from their keys tagIds
-         msgTypeID <- msgTypeIDTagName.map(buildPMsgTypeID)
+         msgTypeID <- msgTypeValue.map(buildPMsgTypeID)
          headerMap = buildMapForBlock(P(controlPair.headerTags | msgTypeID))
          // this will need to be fixed since msgTypeID should be viewed as a predecessor of headerTags as it's mandatory for it by FIX
          // to be the first tag of headerTags. We may as well make a semantic translation and interpret that as saying msgType is not
@@ -134,8 +198,7 @@ object FIXDictionary extends PlayJSReads {
   // with help of controlTags that are constant for any FIX Message of the same FIX Version
   /**
     *
-    * @param conf instance of Config
-    * @param key a key for config so we can identify the tags of a msgType that is 1-1 with the key
+    * @param value used to identify the tags of a msgType
     * @param controlTags a pair of header tag info and trailer tag info with trailer info already arranged as a map of TagId to meta data
     * @param bodyTags the map from tagId to the meta data (with default value to be reevaluated) for that tag
     * @return A PMessage, which consists of headerTags, bodyTags, and trailerTags
@@ -146,31 +209,24 @@ object FIXDictionary extends PlayJSReads {
     * So, eventually, there should be a design for each FIX Version to build a set of PMessage parsers
     * for all valid MsgId within that FIX Version.
     */
-  def buildPMsgFromConfig(conf: Config, key: String, controlTags: ControlTagsParserPair,
+  def buildPMsgFromConfig(value: String, controlTags: ControlTagsParserPair,
                           bodyTags: TagIdToTagInfo): PMessage = {
-    def getTagIds(obj: JsValue, path: String): Seq[TagIdWrapper] =
-      getElements(obj, path)(tagIdReads)
-
-    val configTags = conf.getString(key)
-    val jsObj = Json.parse(configTags)
-    val msgTypeIDTagName = (jsObj \ "msgType").asOpt[String] // don't try to consume exact value yet, be happy to capture an Option.
-    val msgBodyTagIds = getTagIds(jsObj, "tags").flatMap(t => bodyTags.get(t.id))
-    buildPMsg(controlTags, msgTypeIDTagName, msgBodyTagIds).fold[PMessage](Fail)(identity) // note the default to Fail on None Option.
+    val (msgTypeValue, msgBodyTagIds) = getMsgTypeAndBodyTagIds(value, bodyTags)
+    buildPMsg(controlTags, msgTypeValue, msgBodyTagIds).fold[PMessage](Fail)(identity) // note the default to Fail on None Option.
   }
 
-  val conf = ConfigFactory.load()
-  val controlTags = getControlTags(conf)
-  val bodyTags = buildTagInfosFromConfig(conf, "bodyTags").map(t => (t.id, t)).toMap
+  val controlTags = getControlTags(confHeaderTags, confTrailerTags)
+  val bodyTags = buildTagInfosFromConfig(confBodyTags).map(t => (t.id, t)).toMap
   // New Order Single
-  val FIXMsgDP = buildPMsgFromConfig(conf, "NewOrderTags", controlTags, bodyTags)
+  val FIXMsgDP = buildPMsgFromConfig(confNewOrderTags, controlTags, bodyTags)
   // Cancel Request
-  val FIXMsgFP = buildPMsgFromConfig(conf, "CancelRequestTags", controlTags, bodyTags)
+  val FIXMsgFP = buildPMsgFromConfig(confCancelRequestTags, controlTags, bodyTags)
   // Cancel Replace Request
-  val FIXMsgGP = buildPMsgFromConfig(conf, "CancelReplaceTags", controlTags, bodyTags)
+  val FIXMsgGP = buildPMsgFromConfig(confCancelReplaceTags, controlTags, bodyTags)
   // Order Cancel Reject
-  val FIXMsg9P = buildPMsgFromConfig(conf, "OrderCancelRejectTags", controlTags, bodyTags)
+  val FIXMsg9P = buildPMsgFromConfig(confOrderCancelRejectTags, controlTags, bodyTags)
   // Execution Report
-  val FIXMsg8P = buildPMsgFromConfig(conf, "ExecutionReportTags", controlTags, bodyTags)
+  val FIXMsg8P = buildPMsgFromConfig(confExecutionReportTags, controlTags, bodyTags)
 
   case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TagInfo {
     override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))

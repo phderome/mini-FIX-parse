@@ -8,7 +8,7 @@ import fastparse.core.Parsed
 
 class FIXDictionaryTest extends UnitTest {
 
-  def checkResult[T](P: Parsed[T], index: Int, isSuccess: Boolean) = {
+  def checkResult[T, E, R](P: Parsed[T, E, R], index: Int, isSuccess: Boolean) = {
     P.index should equal(index)
     // matched parameters below are not used, they serve a documentation purpose of what Success and Failure look like
     if (isSuccess) {
@@ -108,5 +108,4 @@ class FIXDictionaryTest extends UnitTest {
     val P = FIXMsgDP.parse(data)
     checkResult(P, "8=FIX.4.2,35=D,43=N,54=0,40=0,10=100".length, isSuccess = false)
   }
-
 }
