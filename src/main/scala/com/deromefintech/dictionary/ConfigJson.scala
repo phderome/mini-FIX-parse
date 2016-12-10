@@ -15,25 +15,23 @@ import scala.util.{Left, Right}
 // and not continuously for client use.
 
 trait ConfigJson {
-  def getMetaDatas(jsonString: String): Seq[MetaData] = {
-    val doc = parse(jsonString).getOrElse(Json.Null)
-    doc.hcursor.downField("tags").as[Seq[MetaData]] match {
+  def getMetaDatas(document: String, tagGroup: String): Seq[MetaData] = {
+    val doc = parse(document).getOrElse(Json.Null)
+    doc.hcursor.downField(tagGroup).as[Seq[MetaData]] match {
       case Left(_) => Nil
       case Right(ms) => ms
     }
   }
 
-  def getMsgTypeAndBodyTagIds(json: String, bodyTags: TagIdToTagInfo): (Option[String], Seq[TagInfo]) = {
-    val doc: Json = parse(json).getOrElse(Json.Null)
-    val cursor: HCursor = doc.hcursor
+  def getMsgTypeAndBodyTagIds(document: String, tagGroup: String, bodyTags: TagIdToTagInfo): (Option[String], Seq[TagInfo]) = {
+    val doc = parse(document).getOrElse(Json.Null)
+    val cursor = doc.hcursor.downField(tagGroup)
 
     val msgTypeValue = cursor.downField("msgType").as[String].toOption
-
     val msgBodyTagIds = (cursor.downField("tags").as[Seq[TagIdWrapper]] match {
       case Left(_) => Nil
       case Right(wraps) => wraps
     }).flatMap(t => bodyTags.get(t.id))
     (msgTypeValue, msgBodyTagIds)
   }
-
 }

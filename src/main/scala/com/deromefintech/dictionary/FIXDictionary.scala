@@ -17,92 +17,79 @@ object FIXDictionary extends ConfigJson {
   case class MetaData(id: Int, name: String, `type`: String) extends BasicMetaData
   case class ControlTagsParserPair(headerTags: PTagInfo, trailerMap: PTagIdToTagInfo)
 
-
-  // HACK: types are overly simplified, SendingTime is not a String. Should be back in config file not in code.
-  val  confHeaderTags = """{
-   "tags":[
-   {"id":8, "name":"BeginString", "type":"String"},
-   {"id":9, "name": "BodyLength", "type":"Int"},
-   {"id":34, "name":"MsgSeqNum", "type": "Int"},
-   {"id":35, "name": "MsgType", "type":"String"},
-   {"id":43, "name":"possDupe", "type":"Boolean"},
-   {"id":49, "name":"SenderCompID", "type":"String"},
-   {"id":52, "name":"SendingTime", "type":"String"},
-   {"id":56, "name":"TargetCompID", "type":"String"},
-   {"id":97, "name":"PossResend", "type":"Boolean"},
-   {"id":115, "name":"OnBehalfOfCompID", "type":"String"},
-   {"id":128, "name":"DeliverToCompID", "type":"String"}
-   ]
-    }"""
-
-  // HACK: should be Length for 93 and Data for 89
-  val confTrailerTags = """{
-   "tags":[
-     {"id":10, "name": "CheckSum", "type":"String"},
-     {"id":89, "name": "Signature", "type":"String"},
-     {"id":93, "name": "SignatureLength", "type":"String"}
-   ]
-    }"""
-
-  val confBodyTags = """{
-   "tags":[
-   {"id":11, "name": "ClOrdID", "type":"String"},
-   {"id":37, "name": "OrderID", "type":"String"},
-   {"id":40, "name": "OrdType", "type":"Char"},
-   {"id":41, "name": "OrigClOrdID", "type":"String"},
-   {"id":54, "name": "Side", "type":"Char"},
-   {"id":55, "name": "Symbol", "type":"String"}
-   ]
-    }"""
-
-  val confNewOrderTags = """{
-   "msgType":"D",
-   "tags":[
-   {"id":11},
-   {"id":55},
-   {"id":40},
-   {"id":54}
-   ]}"""
-
-  val confCancelRequestTags = """{
-   "msgType":"F",
-   "tags":[
-   {"id":11},
-   {"id":37},
-   {"id":41},
-   {"id":54},
-   {"id":55}
-   ]}"""
-
-  val confCancelReplaceTags = """{
-   "msgType":"G",
-   "tags":[
-   {"id":11},
-   {"id":37},
-   {"id":41},
-   {"id":54},
-   {"id":40},
-   {"id":55}
-   ]}"""
-
-  val confOrderCancelRejectTags = """{
-   "msgType":"9",
-   "tags":[
-   {"id":11},
-   {"id":37},
-   {"id":41}
-   ]}"""
-
-  val confExecutionReportTags = """{
-   "msgType":"8",
-   "tags":[
-   {"id":11},
-   {"id":37},
-   {"id":41},
-   {"id":54},
-   {"id":40},
-   {"id":55}
-   ]}"""
+  val configDocument =
+    s"""{
+        "headerTags":[
+          {"id":8, "name":"BeginString", "type":"String"},
+          {"id":9, "name": "BodyLength", "type":"Int"},
+          {"id":34, "name":"MsgSeqNum", "type": "Int"},
+          {"id":35, "name": "MsgType", "type":"String"},
+          {"id":43, "name":"possDupe", "type":"Boolean"},
+          {"id":49, "name":"SenderCompID", "type":"String"},
+          {"id":52, "name":"SendingTime", "type":"String"},
+          {"id":56, "name":"TargetCompID", "type":"String"},
+          {"id":97, "name":"PossResend", "type":"Boolean"},
+          {"id":115, "name":"OnBehalfOfCompID", "type":"String"},
+          {"id":128, "name":"DeliverToCompID", "type":"String"}
+        ],
+        "trailerTags":[
+          {"id":10, "name": "CheckSum", "type":"String"},
+          {"id":89, "name": "Signature", "type":"String"},
+          {"id":93, "name": "SignatureLength", "type":"String"}
+        ],
+        "bodyTags":[
+          {"id":11, "name": "ClOrdID", "type":"String"},
+          {"id":37, "name": "OrderID", "type":"String"},
+          {"id":40, "name": "OrdType", "type":"Char"},
+          {"id":41, "name": "OrigClOrdID", "type":"String"},
+          {"id":54, "name": "Side", "type":"Char"},
+          {"id":55, "name": "Symbol", "type":"String"}
+        ],
+        "NewOrderTags":{
+          "msgType":"D",
+          "tags":[
+          {"id":11},
+          {"id":55},
+          {"id":40},
+          {"id":54}
+        ]},
+        "CancelRequestTags":{
+          "msgType":"F",
+          "tags":[
+          {"id":11},
+          {"id":37},
+          {"id":41},
+          {"id":54},
+          {"id":55}
+        ]},
+        "CancelReplaceTags":{
+          "msgType":"G",
+          "tags":[
+           {"id":11},
+           {"id":37},
+           {"id":41},
+           {"id":54},
+           {"id":40},
+           {"id":55}
+        ]},
+        "CancelRejectTags":{
+          "msgType":"9",
+          "tags":[
+           {"id":11},
+           {"id":37},
+           {"id":41}
+        ]},
+        "ExecutionReportTags":{
+          "msgType":"8",
+          "tags":[
+           {"id":11},
+           {"id":37},
+           {"id":41},
+           {"id":54},
+           {"id":40},
+           {"id":55}
+        ]}
+   }""".stripMargin
 
   val MSG_TYPE_ID = 35
   val TAG_VALUE_SEP = "="
@@ -137,8 +124,8 @@ object FIXDictionary extends ConfigJson {
     case x => Some(x.foldLeft[PTagInfo](x.head)((accum, next) => P(accum | next)))
   }
 
-  def buildTagInfosFromConfig(value: String): TagInfos = {
-    getMetaDatas(value) map { m: MetaData =>
+  def buildTagInfosFromConfig(tagGroup: String): TagInfos = {
+    getMetaDatas(configDocument, tagGroup) map { m: MetaData =>
       m.`type` match {
         case "Boolean" => BooleanFIXTag(m.id, m.name)
         case "Int" => IntFIXTag(m.id, m.name)
@@ -198,7 +185,7 @@ object FIXDictionary extends ConfigJson {
   // with help of controlTags that are constant for any FIX Message of the same FIX Version
   /**
     *
-    * @param value used to identify the tags of a msgType
+    * @param tagGroup used to identify the tags of a message
     * @param controlTags a pair of header tag info and trailer tag info with trailer info already arranged as a map of TagId to meta data
     * @param bodyTags the map from tagId to the meta data (with default value to be reevaluated) for that tag
     * @return A PMessage, which consists of headerTags, bodyTags, and trailerTags
@@ -209,24 +196,24 @@ object FIXDictionary extends ConfigJson {
     * So, eventually, there should be a design for each FIX Version to build a set of PMessage parsers
     * for all valid MsgId within that FIX Version.
     */
-  def buildPMsgFromConfig(value: String, controlTags: ControlTagsParserPair,
+  def buildPMsgFromConfig(tagGroup: String, controlTags: ControlTagsParserPair,
                           bodyTags: TagIdToTagInfo): PMessage = {
-    val (msgTypeValue, msgBodyTagIds) = getMsgTypeAndBodyTagIds(value, bodyTags)
+    val (msgTypeValue, msgBodyTagIds) = getMsgTypeAndBodyTagIds(configDocument, tagGroup, bodyTags)
     buildPMsg(controlTags, msgTypeValue, msgBodyTagIds).fold[PMessage](Fail)(identity) // note the default to Fail on None Option.
   }
 
-  val controlTags = getControlTags(confHeaderTags, confTrailerTags)
-  val bodyTags = buildTagInfosFromConfig(confBodyTags).map(t => (t.id, t)).toMap
+  val controlTags = getControlTags("headerTags", "trailerTags")
+  val bodyTags = buildTagInfosFromConfig("bodyTags").map(t => (t.id, t)).toMap
   // New Order Single
-  val FIXMsgDP = buildPMsgFromConfig(confNewOrderTags, controlTags, bodyTags)
+  val FIXMsgDP = buildPMsgFromConfig("NewOrderTags", controlTags, bodyTags)
   // Cancel Request
-  val FIXMsgFP = buildPMsgFromConfig(confCancelRequestTags, controlTags, bodyTags)
+  val FIXMsgFP = buildPMsgFromConfig("CancelRequestTags", controlTags, bodyTags)
   // Cancel Replace Request
-  val FIXMsgGP = buildPMsgFromConfig(confCancelReplaceTags, controlTags, bodyTags)
+  val FIXMsgGP = buildPMsgFromConfig("CancelReplaceTags", controlTags, bodyTags)
   // Order Cancel Reject
-  val FIXMsg9P = buildPMsgFromConfig(confOrderCancelRejectTags, controlTags, bodyTags)
+  val FIXMsg9P = buildPMsgFromConfig("CancelRejectTags", controlTags, bodyTags)
   // Execution Report
-  val FIXMsg8P = buildPMsgFromConfig(confExecutionReportTags, controlTags, bodyTags)
+  val FIXMsg8P = buildPMsgFromConfig("ExecutionReportTags", controlTags, bodyTags)
 
   case class StringFIXTag(id: Int, name: String, value: PString = PString("")) extends TagInfo {
     override val tagParser: Parser[PString] = tagStringValue.map(x => PString(x))
