@@ -14,7 +14,6 @@ What I capture here is:
 - distinguishing 5 application messages (`D`, `F`, `G`, `8`, and `9`)
 - distinguishing header, body, and trailer (without accounting for payload or message length)
 - identifying some of the tags on the 5 messages.
-- Tags are external to code, thanks to Play's JSON but could also use FastParse for JSON parsing.
 - Four distinct data types: `Int`, `Char`, `String`, and `Boolean` (more are required, notably timestamps).
 
 Unit tests are meant to demonstrate some of the above features of the mini-parser.
