@@ -6,6 +6,18 @@ import fastparse.all._
 /**
   * Created by philippederome on 2016-09-05.
   */
+abstract sealed class FIXType
+case object FIXBoolean extends FIXType
+case object FIXInt extends FIXType
+case object FIXChar extends FIXType
+
+object FIXType {
+  def fromString(value: String): Option[FIXType] = {
+    List(FIXBoolean, FIXInt, FIXChar).find(_.toString.substring("FIX".length) == value)
+    // we represent Boolean, Int, Char in resource file but those are reserved by language so trim header FIX in name.
+  }
+}
+
 object FIXDictionary extends ConfigJson {
   type TagInfos = Seq[TagInfo]
   type TagId = Int
@@ -14,6 +26,19 @@ object FIXDictionary extends ConfigJson {
   type PTagIdToTagInfo = Parser[TagIdToTagInfo]
   type PMessage = Parser[(TagIdToTagInfo, TagIdToTagInfo, TagIdToTagInfo)]
   case class TagIdWrapper(id: TagId)
+
+  type FIXTagBuilder = (Int, String) => TagInfo
+  val defaultFIXTagBuilder: FIXTagBuilder = StringFIXTag( _, _)
+  val booleanFIXTagBuilder: FIXTagBuilder = BooleanFIXTag( _, _)
+  val intFIXTagBuilder: FIXTagBuilder = IntFIXTag( _, _)
+  val charFIXTagBuilder: FIXTagBuilder = CharFIXTag( _, _)
+
+  val FIXTypeToTagInfo = Map[FIXType, FIXTagBuilder](
+    FIXBoolean -> booleanFIXTagBuilder,
+    FIXInt -> intFIXTagBuilder,
+    FIXChar -> charFIXTagBuilder
+  ).withDefaultValue(defaultFIXTagBuilder)
+
   case class MetaData(id: Int, name: String, `type`: String) extends BasicMetaData
   case class ControlTagsParserPair(headerTags: PTagInfo, trailerMap: PTagIdToTagInfo)
 
@@ -53,13 +78,10 @@ object FIXDictionary extends ConfigJson {
   }
 
   def buildTagInfosFromConfig(tagGroup: String): TagInfos = {
-    getMetaDatas(configDocument, tagGroup) map { m: MetaData =>
-      m.`type` match {
-        case "Boolean" => BooleanFIXTag(m.id, m.name)
-        case "Int" => IntFIXTag(m.id, m.name)
-        case "Char" => CharFIXTag(m.id, m.name)
-        case _ => StringFIXTag(m.id, m.name)
-      }
+    getMetaDatas(configDocument, tagGroup) map { m =>
+      FIXType.fromString(m.`type`)
+        .map(x => FIXTypeToTagInfo(x)(m.id, m.name))
+        .getOrElse(defaultFIXTagBuilder(m.id, m.name))
     }
   }
 

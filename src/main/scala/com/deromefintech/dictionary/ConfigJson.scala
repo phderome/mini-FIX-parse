@@ -13,12 +13,14 @@ import scala.util.{Left, Right}
 // Hence we use Circe for JSON parsing.
 
 trait ConfigJson {
+  def eitherSeqToSeq[A, B](d: Either[B, Seq[A]]): Seq[A] = d match {
+    case Left(_) => Nil
+    case Right(x) => x
+  }
+
   def getMetaDatas(document: String, tagGroup: String): Seq[MetaData] = {
     val doc = parse(document).getOrElse(Json.Null)
-    doc.hcursor.downField(tagGroup).as[Seq[MetaData]] match {
-      case Left(_) => Nil
-      case Right(ms) => ms
-    }
+    eitherSeqToSeq(doc.hcursor.downField(tagGroup).as[Seq[MetaData]])
   }
 
   def getMsgTypeAndBodyTagIds(document: String, tagGroup: String, bodyTags: TagIdToTagInfo): (Option[String], Seq[TagInfo]) = {
@@ -26,10 +28,8 @@ trait ConfigJson {
     val cursor = doc.hcursor.downField(tagGroup)
 
     val msgTypeValue = cursor.downField("msgType").as[String].toOption
-    val msgBodyTagIds = (cursor.downField("tags").as[Seq[TagIdWrapper]] match {
-      case Left(_) => Nil
-      case Right(wraps) => wraps
-    }).flatMap(t => bodyTags.get(t.id))
+    val msgBodyTagIds = eitherSeqToSeq(cursor.downField("tags").as[Seq[TagIdWrapper]])
+      .flatMap(t => bodyTags.get(t.id))
     (msgTypeValue, msgBodyTagIds)
   }
 }

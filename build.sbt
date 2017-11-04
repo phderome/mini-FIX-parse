@@ -1,3 +1,4 @@
+
 name := "FIXParser"
 
 version := "1.0"
@@ -17,6 +18,8 @@ scalacOptions ++= Seq(
   "-feature",
   "-language:_"
 )
+
+tutSettings
 
 val circeVersion = "0.6.1"
 
